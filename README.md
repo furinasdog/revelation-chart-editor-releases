@@ -20,6 +20,10 @@ Hub 使用 C#、WPF 和 .NET 10 LTS。安装器自带运行时。它优先从 Gi
 
 从 v1.1.2 起支持 Hub 自动更新。后续版本由 Hub 自动下载并在退出时安装。安装完成后可分别勾选开始菜单和桌面快捷方式。版本库会显示发行公告，侧栏「问题反馈」可直接打开 GitHub Issues。
 
+## 制谱器 v1.2.0
+
+Co-pilot 新增独立自动审批与 Markdown 显示，完善浮现式制谱的手序与跨屏引导，移除废弃的预览设置页。 打开 Hub 的「已安装」，可将 v1.1.1 原位更新到 v1.2.0。首次安装可在「下载 → 版本库」选择本版。[制谱器发行页](https://github.com/furinasdog/revelation-chart-editor-releases/releases/tag/v1.2.0)
+
 ## 编辑器 v1.1.1
 
 v1.1.1 修复 Agent 设置窗口异常增高及高 DPI 下操作按钮超出可用区域的问题。打开 Hub 的「版本库」，点击「刷新版本」即可选择安装。[编辑器发行页](https://github.com/furinasdog/revelation-chart-editor-releases/releases/tag/v1.1.1)

@@ -8,6 +8,8 @@ signal approval_resolved(approved: bool)
 const TITLE := "Revelation Co-pilot"
 const HISTORY_BYTES := 12000
 const Agent := preload("res://desktop/chart_agent.gd")
+const Reviewer := preload("res://desktop/copilot_reviewer.gd")
+const Markdown := preload("res://desktop/copilot_markdown.gd")
 const AudioImport := preload("res://desktop/agent_audio_import.gd")
 const Plan := preload("res://desktop/auto_chart_plan.gd")
 const AnimationDraft := preload("res://desktop/agent_animation.gd")
@@ -54,6 +56,13 @@ var _stop_button: Button
 var _retry_button: Button
 var _retry_message := ""
 var _share_art: CheckBox
+var _auto_approve: CheckBox
+var _reviewer := Reviewer.new()
+var _review_turn := 0
+var _review_scope := {}
+var _review_settings := {}
+var _accepted_operations: Array = []
+var _refused_operations := {}
 var _approval: PanelContainer
 var _approval_title: Label
 var _approval_details: TextEdit
@@ -122,7 +131,14 @@ func setup(workspace: Node) -> void:
 	_share_art = CheckBox.new()
 	_share_art.text = "允许发送曲绘、预览和音频图"
 	_share_art.tooltip_text = "可向所配置的模型发送曲绘、谱面预览、频谱图和波形图。"
-	body.add_child(_share_art)
+	var permissions := HFlowContainer.new()
+	body.add_child(permissions)
+	permissions.add_child(_share_art)
+	_auto_approve = CheckBox.new()
+	_auto_approve.text = "自动审批"
+	_auto_approve.tooltip_text = "读取直接执行。使用当前模型独立审查其他操作，超出要求时拒绝，不确定时请你确认。每次审查会调用一次模型。"
+	permissions.add_child(_auto_approve)
+	add_child(_reviewer)
 	_editor = TextEdit.new()
 	_editor.placeholder_text = "例如：把选中的长键延长半拍"
 	_editor.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
@@ -195,7 +211,7 @@ func _reset_transcript() -> void:
 	for child: Node in _transcript.get_children():
 		_transcript.remove_child(child)
 		child.queue_free()
-	_append("助手", "可以询问当前谱面，也可以指定要编辑的段落或选中的音符。每项改动会先请你确认。")
+	_append("助手", "可以询问当前谱面，也可以指定要编辑的段落或选中的音符。勾选「自动审批」可让审查助手按本轮要求判断改动。")
 
 func _append(speaker: String, message: String) -> RichTextLabel:
 	var row := HBoxContainer.new()
@@ -227,7 +243,10 @@ func _append(speaker: String, message: String) -> RichTextLabel:
 	content.fit_content = true
 	content.scroll_active = false
 	content.selection_enabled = true
-	content.text = message
+	if user:
+		content.text = message
+	else:
+		Markdown.render(content, message)
 	item.add_child(content)
 	_scroll_to.call_deferred(row)
 	return content
@@ -330,7 +349,7 @@ func _preview_reply(text: String) -> void:
 	else:
 		var bar := _scroll.get_v_scroll_bar()
 		var follow := bar.max_value - bar.page - bar.value < 18.0
-		_stream_text.text = text
+		Markdown.render(_stream_text, text)
 		if follow:
 			_scroll_to.call_deferred(_stream_text)
 
@@ -396,7 +415,7 @@ func _confirm_compose() -> void:
 	if _compose_brief.text.length() > 3000:
 		return
 	var level := _compose_level.get_item_text(_compose_level.selected)
-	var prompt := "请为当前歌曲制作 %s 难度的可玩谱面。默认覆盖全曲；若谱师指定了范围、补谱或其他限制，以其要求为准。先读现有音符、相邻乐句和音频特征，结合重音、起音、响度、频段和旋律安排键型、疏密与走位。保留已有编排，分段批量写入，回读检查冲突，再提交实际草稿。" % level
+	var prompt := "请为当前歌曲制作 %s 难度的可玩谱面。默认覆盖全曲；若谱师指定了范围、补谱或其他限制，以其要求为准。先读现有音符、相邻乐句和音频特征，结合重音、起音、响度、频段和旋律安排键型、疏密与走位。这是浮现式音游，键可以出现在屏幕任何位置；按相邻键的手序、长键占手和提前引导安排转移。保留已有编排，分段批量写入，回读检查冲突，再提交实际草稿。" % level
 	var brief := _compose_brief.text.strip_edges()
 	if not brief.is_empty():
 		prompt += "\n谱师要求：" + brief
@@ -436,6 +455,13 @@ func _send_prompt(text: String, difficulty := "") -> bool:
 		_editor.clear()
 	_requested_difficulty = difficulty
 	busy = true
+	_review_turn += 1
+	_review_scope = {"user_request": text, "selected_note_ids": chart.selected_note_ids.duplicate(),
+		"selected_span_ms": [_workspace._loop_range.x, _workspace._loop_range.y],
+		"playhead_ms": chart.preview_anim_time, "editor": _workspace.agent_editor_view()}
+	_review_settings = settings.duplicate()
+	_accepted_operations.clear()
+	_refused_operations.clear()
 	_status.hide()
 	_start_steps()
 	_refresh_controls()
@@ -453,7 +479,7 @@ func _send_prompt(text: String, difficulty := "") -> bool:
 	_workspace.diagnostics.record("copilot.start", {"image_authorized": share})
 	_agent.start(_plan, music, _workspace.automatic._estimate_mood(), settings, text.left(4000), _animation, true,
 		_capture if share else Callable(), _workspace._analyze_for_agent,
-		{"approve": _request_approval, "history": history, "help": _workspace._copilot_help,
+		{"approve": _request_approval, "review_commit": _auto_approve.button_pressed, "history": history, "help": _workspace._copilot_help,
 			"editor_view": _workspace.agent_editor_view, "import_audio": _import_audio.bind(share)},
 		{"selection": _workspace._agent_audio_selection(),
 			"spectrum": _workspace._capture_agent_spectrum if share else Callable()})
@@ -546,6 +572,8 @@ func _on_action(name: String, arguments: Dictionary) -> void:
 			_begin_step(caption)
 
 func _on_action_result(name: String, _arguments: Dictionary, accepted: bool) -> void:
+	if accepted and _auto_approve.button_pressed and name in Agent.WRITES:
+		_accepted_operations.append({"tool": name, "arguments": _arguments.duplicate(true)})
 	var status := "已完成" if accepted else ("已拒绝" if is_instance_valid(_step) and _step_status.text == "已拒绝" else "执行失败")
 	_end_step(status, accepted)
 	_workspace.diagnostics.record("copilot.tool", {"action": _workspace.automatic._action_caption(name), "success": accepted},
@@ -553,7 +581,8 @@ func _on_action_result(name: String, _arguments: Dictionary, accepted: bool) -> 
 
 func _show_action_detail(message: String) -> void:
 	if is_instance_valid(_step) and not message.is_empty():
-		_step_detail.text = message.left(440)
+		var review := str(_step.get_meta("review_note", ""))
+		_step_detail.text = (review + "\n" + message if not review.is_empty() else message).left(660)
 		_step_detail.show()
 
 func _offer_retry(message: String) -> void:
@@ -574,9 +603,55 @@ func _retry_request() -> void:
 func _request_approval(name: String, arguments: Dictionary) -> bool:
 	if not busy or _generation != _workspace._document_generation:
 		return false
+	var operation_key := name + JSON.stringify(arguments)
+	if _refused_operations.has(operation_key):
+		_step_status.text = "已拒绝"
+		return false
+	var review_note := ""
+	if _auto_approve.button_pressed:
+		var turn := _review_turn
+		var proposal := _review_scope.duplicate()
+		proposal["tool"] = name
+		proposal["arguments"] = arguments
+		proposal["song_duration_ms"] = _plan.duration_ms
+		proposal["selected_event_ids"] = _workspace.chart.selected_event_ids.duplicate()
+		if Agent.Context.TOOLS.has(name):
+			proposal["tool_description"] = Agent.Context.TOOLS[name][2]
+		var ids: Array = arguments.ids.duplicate() if arguments.get("ids") is Array else []
+		for field in ["notes", "positions", "moves", "holds"]:
+			if arguments.get(field) is Array:
+				for entry: Variant in arguments[field]:
+					if entry is Dictionary and entry.has("id"):
+						ids.append(entry.id)
+		var targets := {}
+		for id: Variant in ids:
+			if (id is int or id is float) and _plan and _plan.notes.has(int(id)):
+				targets[int(id)] = _plan.notes[int(id)]
+		proposal["current_targets"] = targets
+		if name == "finish":
+			proposal["accepted_operations"] = _accepted_operations
+		_step_status.text = "审查中"
+		var verdict := await _reviewer.review(_review_settings, proposal)
+		if not busy or turn != _review_turn or _generation != _workspace._document_generation:
+			return false
+		review_note = str(verdict.get("reason", "审查服务未给出有效结论，请手动确认。"))
+		_step.set_meta("review_note", "自动审批 · " + review_note)
+		_step_detail.text = "自动审批 · " + review_note
+		_step_detail.show()
+		match verdict.get("decision", "ask"):
+			"allow":
+				return true
+			"deny":
+				_step_status.text = "已拒绝"
+				_refused_operations[operation_key] = true
+				return false
 	_approval_title.text = "等待批准 · " + _workspace.automatic._action_caption(name)
 	if name == "import_audio":
 		_approval_details.text = "确认后立即导入音频，保留现有音符并清空旧分析。\n" + str(arguments.path)
+	elif name == "finish":
+		_approval_details.text = "将本轮已批准的草稿写入当前谱面。\n" + _describe(arguments)
+	elif name == "analyze_audio":
+		_approval_details.text = "运行本地音频分析并更新分析结果。\n" + _describe(arguments)
 	else:
 		_approval_details.text = "应用到当前草稿，完成后将一次性写入谱面。\n" + _describe(arguments)
 		if _plan:
@@ -592,11 +667,15 @@ func _request_approval(name: String, arguments: Dictionary) -> bool:
 					positions.append("#%d  %s" % [id, location.label])
 			if not positions.is_empty():
 				_approval_details.text = "目标音符\n" + "\n".join(positions) + "\n\n" + _approval_details.text
+	if not review_note.is_empty():
+		_approval_details.text = review_note + "\n\n" + _approval_details.text
 	_approval_details.scroll_vertical = 0
 	_approval.show()
 	_step_status.text = "待批准"
 	_refresh_steps()
 	var approved: bool = await approval_resolved
+	if busy and not approved:
+		_refused_operations[operation_key] = true
 	return approved
 
 func _resolve_approval(approved: bool) -> void:
@@ -707,7 +786,7 @@ func _review_phrase(span: Dictionary, generation: int) -> void:
 func _complete(message: String) -> void:
 	_end_step("已结束", false)
 	if is_instance_valid(_stream_text):
-		_stream_text.text = message
+		Markdown.render(_stream_text, message)
 	else:
 		_append("助手", message)
 	_history.append({"role": "assistant", "text": message.left(4000)})
@@ -717,6 +796,8 @@ func cancel() -> void:
 	if not busy:
 		return
 	_agent.cancel()
+	_review_turn += 1
+	_reviewer.stop()
 	if is_instance_valid(_conflict):
 		_conflict.hide()
 	if _approval.visible:
@@ -728,6 +809,10 @@ func cancel() -> void:
 	_clear_turn()
 
 func _clear_turn() -> void:
+	_review_scope.clear()
+	_review_settings.clear()
+	_accepted_operations.clear()
+	_refused_operations.clear()
 	_requested_difficulty = ""
 	busy = false
 	_retry_message = ""
@@ -750,6 +835,7 @@ func _refresh_controls() -> void:
 	_stop_button.visible = busy
 	_retry_button.visible = busy and not _retry_message.is_empty()
 	_share_art.disabled = busy
+	_auto_approve.disabled = busy
 	if is_instance_valid(_last_edit):
 		_last_edit.disabled = busy
 

@@ -27,10 +27,39 @@ class Mock(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
             data = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            if data["stream"] is False:
+                messages = data["messages"]
+                assert len(messages) == 2 and "独立的工具审批员" in messages[0]["content"] and "tools" not in data
+                proposal = json.loads(messages[1]["content"])
+                brief = proposal["user_request"]
+                tool = proposal["tool"]
+                assert tool in ("add_notes", "finish"), "Reads must bypass the reviewer"
+                if tool == "finish":
+                    assert proposal["accepted_operations"][0]["tool"] == "add_notes"
+                else:
+                    assert proposal["arguments"]["notes"][0]["time_ms"] == 4200
+                decision = "deny" if "只读" in brief else "allow"
+                content = "broken JSON" if "服务异常" in brief else json.dumps({"decision":decision,"reason":"核对了本轮请求与调用范围。"},ensure_ascii=False)
+                body = json.dumps({"choices":[{"message":{"content":content},"finish_reason":"stop"}]}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type","application/json")
+                self.send_header("Content-Length",str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
             assert data["stream"]
             messages = data["messages"]
             brief = json.loads(messages[1]["content"])["project"]["brief"]
-            if brief.startswith("请为当前歌曲制作 EX"):
+            if brief.startswith("审批测试"):
+                if len(messages)==2:
+                    operations=[dict(name="get_bpm",arguments={}),dict(name="add_notes",arguments={"notes":[dict(type="note",time_ms=4200,lane=0,x=850,y=480)]})]
+                elif "只读" in brief or "服务异常" in brief:
+                    assert "error" in json.loads(messages[-1]["content"])["tool_results"][-1]["result"]
+                    operations=[dict(name="reply",arguments={"message":"已保留原谱。"})]
+                else:
+                    operations=[dict(name="finish",arguments={"summary":"**已补充** `4.2s` 的音符。"})]
+                fragments=[{"content":json.dumps({"actions":operations},ensure_ascii=False)}]
+            elif brief.startswith("请为当前歌曲制作 EX"):
                 assert "保留主歌" in brief and json.loads(messages[1]["content"])["project"]["difficulty"] == "EX"
                 operations = [dict(name="add_notes", arguments=dict(notes=[dict(type="note",time_ms=4200,lane=0,x=850,y=480)]))] if len(messages)==2 else [dict(name="finish",arguments=dict(summary="已补谱"))]
                 fragments = [{"content": json.dumps({"actions":operations},ensure_ascii=False)}]

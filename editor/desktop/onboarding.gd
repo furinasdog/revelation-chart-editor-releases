@@ -375,7 +375,7 @@ func _beginner_steps() -> Array[Dictionary]:
 			"打开「工具 → Agent 设置」。填写服务地址、API Key 和模型名称并保存。DeepSeek 的地址是 https://api.deepseek.com，模型可填 deepseek-flash。密钥只填在设置里；想先手工制谱可跳过此步。",
 			_workspace._copilot_menu.get_parent(), "填写 API Key", _workspace.automatic.open_settings, "agent_config", "保存有效格式的设置后继续，或点「跳过本步」。"),
 		_step("让 Agent 补一段谱",
-			"打开「工具 → Revelation Co-pilot」，可直接说「只补 20–24 秒，保留已有音符」。也可点底部「一键制谱」，选难度、写要求，再发送。查看助手列出的改动，批准后试听；写入结果可一次撤销。",
+			"打开「工具 → Revelation Co-pilot」，试试「只补 20–24 秒，保留已有音符」，或点「一键制谱」选择难度。默认由你批准改动；勾选「自动审批」后，独立审查助手会按本轮要求核对操作，有疑问时请你决定。读取直接执行，写入后可整轮撤销。",
 			_workspace._copilot_menu.get_parent(), "打开 Co-pilot", _workspace._set_copilot_visible.bind(true)),
 		_step("导出可玩的谱面",
 			"「文件 → 保存谱面」用于继续编辑。「导出谱面压缩包」会把谱面、歌曲和图片打成可玩的 ZIP。之后可从「帮助 → 功能速查」查入口。",

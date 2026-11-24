@@ -554,8 +554,6 @@ func _build_inspector() -> void:
 	var pages := page_menu.get_popup()
 	pages.theme_type_variation = &"DesktopMenuPopup"
 	for i in range(_tabs.get_tab_count()):
-		var page := _tabs.get_tab_control(i)
-		_tabs.set_tab_title(i, "预览设置" if page.name == &"PreviewTab" else _tabs.get_tab_title(i))
 		pages.add_radio_check_item(_tabs.get_tab_title(i), i)
 	pages.about_to_popup.connect(func():
 		for i in range(pages.item_count):

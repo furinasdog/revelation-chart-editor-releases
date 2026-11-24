@@ -221,10 +221,11 @@ func run() -> void:
 	check(chart.selected_note_ids.size() == 1 and not chart.preview_place_multi_active, "Placement respects disabled grouping")
 	var initial_height: float = preview.size.y
 	var timeline_rect: Rect2 = desktop.rollout.get_rect()
+	check(not desktop._tabs.has_node("PreviewTab"), "Retired preview inspector is absent")
 	var initial_tab: int = desktop._tabs.current_tab
-	desktop._tabs.current_tab = desktop._tabs.get_node("PreviewTab").get_index()
+	desktop._tabs.current_tab = desktop._tabs.get_node("动画设置").get_index()
 	check(preview.size.y == initial_height and desktop.rollout.get_rect() == timeline_rect and desktop._timeline_divider.visible,
-		"Opening the preview controls preserves the pane and piano roll layout")
+		"Switching inspector pages preserves the pane and piano roll layout")
 	desktop._tabs.current_tab = initial_tab
 	desktop._set_game_mode(true)
 	check(preview.size.y == initial_height and desktop.rollout.get_rect() == timeline_rect,
@@ -233,7 +234,7 @@ func run() -> void:
 	current_scene.set_preview_focus(true)
 	check(preview.size.y > initial_height and not desktop._timeline_divider.visible and desktop.rollout.visible,
 		"Preview focus grows the upper pane and keeps the piano roll")
-	desktop._tabs.current_tab = desktop._tabs.get_node("PreviewTab").get_index()
+	desktop._tabs.current_tab = desktop._tabs.get_node("动画设置").get_index()
 	desktop._tabs.current_tab = initial_tab
 	check(not desktop._timeline_divider.visible, "Changing tabs preserves manually chosen preview focus")
 	current_scene.set_preview_focus(false)

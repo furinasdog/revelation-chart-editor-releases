@@ -131,5 +131,27 @@ func _run() -> void:
 		push_error("Undo must restore the notes and difficulty together")
 		quit(1)
 		return
+	if dock._auto_approve.button_pressed:
+		push_error("Automatic review must be opt-in")
+		quit(1)
+		return
+	dock._auto_approve.button_pressed = true
+	for brief in ["审批测试：只读，查看速度。", "审批测试：服务异常，在4.2秒补一个键。", "审批测试：在4.2秒补一个键。"]:
+		dock._send_prompt(brief)
+		if "服务异常" in brief:
+			if not await _wait(func(): return dock._approval.visible) or not desktop.chart.notes.is_empty():
+				push_error("Unavailable reviewer must fall back to the manual approval card")
+				quit(1)
+				return
+			dock._resolve_approval(false)
+		if not await _wait(func(): return not dock.busy) or desktop.chart.notes.size() != int(brief == "审批测试：在4.2秒补一个键。"):
+			push_error("Independent reviewer failed to enforce: " + brief)
+			quit(1)
+			return
+	var bubble: RichTextLabel = dock._append("助手", "## 结果\n- **已补充** `4.2s`\n[b]保留字面文本[/b]")
+	if bubble.get_parsed_text() != "结果\n• 已补充 4.2s\n[b]保留字面文本[/b]":
+		push_error("Markdown should be readable and BBCode must stay literal")
+		quit(1)
+		return
 	print("COPILOT_TOOL_REPLY_SMOKE verified")
 	quit()
