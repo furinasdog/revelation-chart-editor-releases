@@ -23,12 +23,13 @@ namespace RevelationHub
         private bool checkingServices, reopenAfterUpdate;
         private string readyVersion;
         private readonly CancellationTokenSource lifetime = new CancellationTokenSource();
-        private readonly Dictionary<string, Transfer> transfers = new Dictionary<string, Transfer>();
+        private Transfer hubTransfer;
+        private readonly HashSet<Notice> announced = new();
         private Release[] available = Array.Empty<Release>();
         private CancellationTokenSource download;
         private string activeVersion;
         private bool onlyInstalled, closing;
-        private static SolidColorBrush ColorOf(string hex) => new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex));
+        private Brush ThemeBrush(string key) => (Brush)FindResource(key);
 
         public MainWindow() : this(new HttpClient {Timeout=Timeout.InfiniteTimeSpan},HubServices.UserRoot,new EditorProfile(EditorProfile.DefaultRoot)) { }
 
@@ -43,19 +44,17 @@ namespace RevelationHub
             options = HubOptions.Load(root);
             models = new EditorModels(profile,http);
             HubVersionLabel.Text = "Hub v" + HubServices.Current.ToString(3);
-            StateChanged += (_,__) => {
-                MaximizeButton.Content = WindowState==WindowState.Maximized ? "\uE923" : "\uE922";
-                WindowFrame.Padding=WindowState==WindowState.Maximized ? SystemParameters.WindowResizeBorderThickness : new Thickness(0);
-            };
             serviceTimer.Tick += async (_, __) => await CheckServices(false);
             Loaded += async (_, __) => {
                 serviceTimer.Start();
+                WatchEditor(); editorTimer.Start();
                 _ = CheckServices(false);
-                try { available = library.Offline(); CatalogStatus.Text = library.CatalogSource; Navigate(library.LocalVersions().Any()?"已安装":"版本库"); await Refresh(); }
-                catch (Exception ex) { CatalogStatus.Text = ex.Message; }
+                try { available = library.Offline(); Navigate(library.LocalVersions().Any()?"已安装":"版本库"); await Refresh(); }
+                catch (Exception ex) { Message(ex.Message, true); }
             };
+            editorTimer.Tick += (_, __) => WatchEditor();
             Closing += OnClosing;
-            Closed += (_, __) => { serviceTimer.Stop(); lifetime.Cancel(); http.Dispose(); };
+            Closed += (_, __) => { serviceTimer.Stop(); editorTimer.Stop(); editor?.Process.Dispose(); lifetime.Cancel(); http.Dispose(); };
         }
         private void OnClosing(object sender, CancelEventArgs e)
         {
@@ -68,29 +67,22 @@ namespace RevelationHub
             }
             if (readyVersion == null) return;
             try { services.StartUpdater(readyVersion, reopenAfterUpdate); readyVersion = null; }
-            catch (Exception ex) { if (reopenAfterUpdate) e.Cancel = true; UpdateStatus.Text = "更新未能启动 · " + ex.Message; }
+            catch (Exception ex) { if (reopenAfterUpdate) e.Cancel = true; Message("更新未能启动 · " + ex.Message, true); }
         }
         private async Task Refresh()
         {
             RefreshButton.IsEnabled = false;
-            CatalogStatus.Text = "正在检查可用版本…";
             try
             {
                 available = await library.Refresh(lifetime.Token);
-                CatalogStatus.Text = library.CatalogSource;
+                NotifySync(library.CatalogSynced, library.CatalogSource);
                 Render();
             }
             catch (OperationCanceledException) { }
-            catch (Exception ex) { CatalogStatus.Text = ex.Message; }
+            catch (Exception ex) { NotifySync(false, ex.Message); }
             finally { RefreshButton.IsEnabled = true; }
         }
         private async void RefreshClick(object sender, RoutedEventArgs e) { if (OnLibrary) await Task.WhenAll(Refresh(), CheckServices(true)); else Navigate(page,true); }
-        private void ShowNotices() => NoticePanel.Visibility = options.Announcements && !onlyInstalled && Notices.Children.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-        private void FeedbackClick(object sender, RoutedEventArgs e)
-        {
-            try { Process.Start(new ProcessStartInfo(HubServices.IssuesUrl) { UseShellExecute = true }); }
-            catch (Exception ex) { Message("无法打开问题反馈 · " + ex.Message); }
-        }
         private void ApplyClick(object sender, RoutedEventArgs e) { if (download == null && readyVersion != null) { reopenAfterUpdate = true; Close(); } }
         private async Task CheckServices(bool manual)
         {
@@ -104,17 +96,11 @@ namespace RevelationHub
             try
             {
                 var items = await services.Notices(lifetime.Token);
-                Notices.Children.Clear();
+                if (!options.Announcements) return;
+                announced.IntersectWith(items);
                 foreach (var item in items)
-                {
-                    var title = Label(item.title, 14, "#245675");
-                    title.FontWeight = FontWeights.SemiBold;
-                    Notices.Children.Add(title);
-                    var content = Label(item.body, 13, "#485C6E");
-                    content.Margin = new Thickness(0, 3, 0, 6);
-                    Notices.Children.Add(content);
-                }
-                ShowNotices();
+                    if (announced.Add(item)) announcementQueue.Enqueue(item.title + "\n" + item.body);
+                NextAnnouncement();
             }
             catch (OperationCanceledException) { }
             catch (Exception) { /* Keep the last displayed notice while offline. */ }
@@ -122,36 +108,60 @@ namespace RevelationHub
         private async Task CheckUpdate(bool manual)
         {
             if (readyVersion != null) return;
+            bool checkingTransfer = true;
             try
             {
                 services.CleanApplied();
                 var progress = new Progress<Transfer>(t =>
                 {
-                    if (readyVersion != null || lifetime.IsCancellationRequested) return;
-                    UpdatePanel.Visibility = Visibility.Visible;
-                    UpdateStatus.Text = "Hub 更新 · " + t.Stage + (t.Total > 0 ? $"  {100.0 * t.Bytes / t.Total:F0}%" : "");
+                    if (!checkingTransfer || lifetime.IsCancellationRequested) return;
+                    hubTransfer = new Transfer("Hub 更新 · " + t.Stage, t.Bytes, t.Total);
+                    if (download == null) ShowTransfer(hubTransfer);
                 });
                 readyVersion = await services.Prepare(HubServices.Current, progress, lifetime.Token);
                 if (readyVersion != null)
                 {
-                    UpdateStatus.Text = $"Hub v{readyVersion} 已就绪，退出时自动安装";
-                    UpdatePanel.Visibility = ApplyButton.Visibility = Visibility.Visible;
+                    ApplyButton.Visibility = Visibility.Visible;
                     ApplyButton.IsEnabled = download == null;
+                    Message($"Hub v{readyVersion} 已就绪，退出时自动安装。");
                 }
-                else { UpdateStatus.Text = "Hub 已是最新版本"; UpdatePanel.Visibility = manual ? Visibility.Visible : Visibility.Collapsed; }
+                else if (manual) Message("Hub 已是最新版本。");
             }
             catch (OperationCanceledException) { }
             catch (Exception ex)
             {
-                if (manual || UpdatePanel.IsVisible) { UpdatePanel.Visibility = Visibility.Visible; UpdateStatus.Text = "暂时无法更新 Hub · " + ex.Message; }
+                if (manual || hubTransfer != null)
+                    Message(ex is FileNotFoundException or DirectoryNotFoundException
+                        ? "Hub 更新源暂时不可用，可稍后重试。" : "暂时无法更新 Hub · " + ex.Message, true);
+            }
+            finally
+            {
+                checkingTransfer = false;
+                hubTransfer = null;
+                if (download == null) ShowTransfer(null);
             }
         }
+        private void ShowTransfer(Transfer transfer)
+        {
+            JobStatus.Text = transfer?.Stage ?? "";
+            JobProgress.Visibility = transfer == null ? Visibility.Collapsed : Visibility.Visible;
+            JobCancel.Visibility = transfer != null && download != null ? Visibility.Visible : Visibility.Collapsed;
+            JobProgress.IsIndeterminate = transfer != null && transfer.Total <= 0;
+            if (transfer?.Total > 0)
+            {
+                double percent = 100.0 * transfer.Bytes / transfer.Total;
+                JobStatus.Text += $"  {percent:F0}%";
+                SetProgress(JobProgress, percent);
+            }
+            else SetProgress(JobProgress, 0);
+        }
+
         private void OpenFolder(object sender, RoutedEventArgs e)
         {
             try { Process.Start(new ProcessStartInfo(library.Versions) { UseShellExecute = true }); }
-            catch (Exception ex) { Message(ex.Message); }
+            catch (Exception ex) { Message(ex.Message, true); }
         }
-        private sealed record CardView(string Notes,string Date,long Size,string Hash,bool Present,bool Installed,string Update,bool Busy,bool Active);
+        private sealed record CardView(string Notes,string Date,long Size,string Hash,bool Present,bool Installed,string Update);
         private readonly Dictionary<string,(CardView View,Border Card)> displayed = new();
         private void Render()
         {
@@ -167,7 +177,7 @@ namespace RevelationHub
             {
                 var r=rows[i];bool present=local.Contains(r.version);
                 var upgrade=present?available.FirstOrDefault(x=>Version.Parse(x.version)>Version.Parse(r.version) && !local.Contains(x.version)):null;
-                var view=new CardView(r.notes,r.date,r.size,r.sha256,present,present && library.Installed(r.version),upgrade?.version,activeVersion!=null && !present,activeVersion==r.version);
+                var view=new CardView(r.notes,r.date,r.size,r.sha256,present,present && library.Installed(r.version),upgrade?.version);
                 bool exists=displayed.TryGetValue(r.version,out var prior);
                 if(!exists || prior.View!=view)
                 {
@@ -179,8 +189,8 @@ namespace RevelationHub
             }
             EmptyState.Text = Cards.Children.Count > 0 ? "" : onlyInstalled ? "还没有安装制谱器。可在版本库选择版本安装。" : "当前没有可用版本。";
         }
-        private static TextBlock Label(string text, double size, string color) =>
-            new TextBlock { Text = text, FontSize = size, TextWrapping = TextWrapping.Wrap, Foreground = ColorOf(color), VerticalAlignment = VerticalAlignment.Center };
+        private TextBlock Label(string text, double size, string color) =>
+            new TextBlock { Text = text, FontSize = size, TextWrapping = TextWrapping.Wrap, Foreground = ThemeBrush(color), VerticalAlignment = VerticalAlignment.Center };
         private Border BuildCard(Release r,CardView view,Release upgrade)
         {
             bool installed = view.Installed;
@@ -188,47 +198,39 @@ namespace RevelationHub
             var panel = new StackPanel();
             var card = new Border { Style=(Style)FindResource("Card"), Child=panel };
             var header = new DockPanel();
-            var version = Label("v" + r.version, 20, "#273344");
+            var version = Label("v" + r.version, 20, "Ink");
             version.FontWeight = FontWeights.SemiBold;
-            var state = Label(damaged ? "需要修复" : installed ? "已安装" : "可安装", 13, damaged?"#873E27":installed ? "#27634F" : "#415F7A");
+            var state = Label(damaged ? "需要修复" : installed ? "已安装" : "可安装", 13, damaged?"Warning":installed ? "Success" : "Muted");
             DockPanel.SetDock(state, Dock.Right); header.Children.Add(state); header.Children.Add(version);
             panel.Children.Add(header);
-            var detail = Label($"Windows  x64   ·   {r.date}" + (r.size > 0 ? $"   ·   {r.size / 1048576.0:F1} MiB" : ""), 12, "#526477");
+            var detail = Label($"Windows  x64   ·   {r.date}" + (r.size > 0 ? $"   ·   {r.size / 1048576.0:F1} MiB" : ""), 12, "Muted");
             detail.Margin = new Thickness(0,4,0,10); panel.Children.Add(detail);
-            if (!String.IsNullOrWhiteSpace(r.notes)) panel.Children.Add(Label(r.notes,14,"#394B5A"));
-            var progress = new ProgressBar { Height=5, Maximum=100, Foreground=ColorOf("#295F88"), Background=ColorOf("#DEE5EA"), BorderThickness=new Thickness(0) };
-            var status = Label("",12,"#526477");
-            var action = new Button { Content=installed ? "启动" : "安装", MinWidth=86, Background=ColorOf("#285C80"), Foreground=ColorOf("#FFFFFF") };
+            if (!String.IsNullOrWhiteSpace(r.notes)) panel.Children.Add(Label(r.notes,14,"Ink"));
+            var action = new Button { Content=installed ? "启动" : "安装", MinWidth=86, VerticalAlignment=VerticalAlignment.Center, Background=ThemeBrush("Accent"), BorderBrush=ThemeBrush("Accent"), Foreground=ThemeBrush("Paper") };
             if (damaged) action.Visibility=Visibility.Collapsed;
             var bottom = new DockPanel { Margin=new Thickness(0,14,0,0) };
-            DockPanel.SetDock(action,Dock.Right); bottom.Children.Add(action); bottom.Children.Add(status);
+            DockPanel.SetDock(action,Dock.Right); bottom.Children.Add(action);
+            var secondary = new StackPanel { VerticalAlignment=VerticalAlignment.Center };
+            if (view.Present) AddMaintenanceButtons(secondary,r,upgrade);
+            bottom.Children.Add(secondary);
             action.Click += async (_, __) => {
-                if (activeVersion == r.version && download != null) { download.Cancel(); return; }
-                if (installed) { try { library.Launch(r.version); } catch (Exception ex) { status.Text = ex.Message; } }
+                if (installed) await ToggleEditor(r.version);
                 else await Install(r);
             };
-            if (activeVersion == r.version)
-            {
-                action.Content="取消"; action.Background=ColorOf("#444A51"); action.Foreground=ColorOf("#FFFFFF");
-            }
-            else if (view.Busy) action.IsEnabled=false;
             panel.Children.Add(bottom);
-            if (view.Present) AddMaintenanceButtons(panel,r,upgrade);
-            progress.Margin = new Thickness(0,10,0,0);
-            panel.Children.Add(progress);
-            card.Tag = new Action<Transfer>(t => {
-                bool running = r.version == activeVersion;
-                progress.Visibility = running ? Visibility.Visible : Visibility.Collapsed;
-                progress.IsIndeterminate = running && (t == null || t.Total == 0);
-                status.Text = t?.Stage ?? "";
-                if (t != null && t.Total > 0) {
-                    progress.Value=100.0*t.Bytes/t.Total;
-                    status.Text=$"{t.Stage}   {progress.Value:F0}%   ·   {t.Bytes/1048576.0:F1} / {t.Total/1048576.0:F1} MiB";
+            void UpdateActions()
+            {
+                if (installed) ApplyEditorState(r.version, action, secondary);
+                else
+                {
+                    action.IsEnabled = download == null;
+                    action.Content = activeVersion == r.version ? "安装中…" : "安装";
+                    secondary.IsEnabled = download == null;
                 }
-            });
+            }
+            card.Tag = (Action)UpdateActions;
             card.Name = "V" + r.version.Replace('.','_');
-            transfers.TryGetValue(r.version,out Transfer prior);
-            ((Action<Transfer>)card.Tag)(prior);
+            UpdateActions();
             return card;
         }
         private async Task Install(Release r)
@@ -237,19 +239,16 @@ namespace RevelationHub
             download = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
             ApplyButton.IsEnabled = false;
             activeVersion = r.version;
-            transfers[r.version] = new Transfer("准备下载");
-            Render();
-            var progress = new Progress<Transfer>(t => {
-                if (activeVersion != r.version) return;
-                transfers[r.version]=t;
-                var card = Cards.Children.OfType<Border>().FirstOrDefault(c => c.Name=="V"+r.version.Replace('.','_'));
-                if (card != null) ((Action<Transfer>)card.Tag)(t);
-            });
-            try { await library.Install(r,progress,download.Token); transfers[r.version]=new Transfer("安装完成"); }
-            catch (OperationCanceledException) { transfers[r.version]=new Transfer("已取消下载"); }
-            catch (Exception ex) { transfers[r.version]=new Transfer("安装失败 · "+ex.Message); }
+            var job = download;
+            ShowTransfer(new Transfer("准备下载 v" + r.version));
+            RefreshEditorActions();
+            var progress = new Progress<Transfer>(t => { if (download == job) ShowTransfer(t); });
+            try { await library.Install(r,progress,job.Token); Message("已安装 v" + r.version + "。"); }
+            catch (OperationCanceledException) { Message("已取消下载。"); }
+            catch (Exception ex) { Message("安装失败 · " + ex.Message, true); }
             finally {
                 download.Dispose(); download=null; activeVersion=null; ApplyButton.IsEnabled=true;
+                ShowTransfer(hubTransfer); RefreshEditorActions();
                 if (closing) Close(); else Render();
             }
         }

@@ -43,6 +43,7 @@ namespace RevelationHub
         public string Root { get; }
         public string Versions => Path.Combine(Root, "versions");
         public string CatalogSource { get; private set; }
+        public bool CatalogSynced { get; private set; }
         public class Envelope { public string payload { get; set; } public string signature { get; set; } }
         public class Index { public int schema { get; set; } public string product { get; set; } public Release[] releases { get; set; } }
 
@@ -116,6 +117,7 @@ namespace RevelationHub
                                 if (File.Exists(Cache)) File.Replace(temporary, Cache, null); else File.Move(temporary, Cache);
                             }
                             finally { if (File.Exists(temporary)) File.Delete(temporary); }
+                            CatalogSynced = true;
                             CatalogSource = url == Catalog ? "已从 GitHub 同步" : "已从镜像同步";
                             return items;
                         }
@@ -124,6 +126,7 @@ namespace RevelationHub
                 catch (Exception ex) when (ex is HttpRequestException || ex is IOException || ex is OperationCanceledException || ex is InvalidDataException || ex is FormatException || ex is JsonException || ex is CryptographicException || ex is ArgumentException || ex is InvalidOperationException)
                 { ct.ThrowIfCancellationRequested(); }
             }
+            CatalogSynced = false;
             var fallback = Offline();
             CatalogSource = "在线目录不可用 · " + CatalogSource;
             return fallback;
@@ -159,9 +162,42 @@ namespace RevelationHub
         public IEnumerable<string> LocalVersions() => Directory.EnumerateDirectories(Versions).Select(SlotVersion).Where(ValidVersion).Distinct();
         public void Launch(string version)
         {
+            using var process = StartEditor(version);
+        }
+        internal Process StartEditor(string version)
+        {
+            using var gate = AcquireLibrary();
+            var running = FindRunningEditor();
+            if (running != null)
+            {
+                running.Process.Dispose();
+                throw new InvalidOperationException($"制谱器 v{running.Version} 已在运行。");
+            }
             var exe = Executable(version);
             if (!Installed(version)) throw new FileNotFoundException("安装文件缺失，请重新安装该版本。");
-            Process.Start(new ProcessStartInfo(exe) { WorkingDirectory = Path.GetDirectoryName(exe), UseShellExecute = false });
+            return Process.Start(new ProcessStartInfo(exe) { WorkingDirectory = Path.GetDirectoryName(exe), UseShellExecute = false })
+                ?? throw new InvalidOperationException("Windows 未能创建制谱器进程。");
+        }
+        internal sealed record RunningEditor(string Version, Process Process);
+        internal RunningEditor FindRunningEditor()
+        {
+            RunningEditor found = null;
+            foreach (var process in Process.GetProcessesByName(Editor))
+            {
+                try
+                {
+                    var exe = found == null ? process.MainModule?.FileName : null;
+                    if (exe == null) continue;
+                    var slot = Directory.GetParent(exe)?.Parent;
+                    if (slot?.Parent == null || !FileNames.Equals(slot.Parent.FullName,Versions) ||
+                        !FileNames.Equals(exe, Path.Combine(slot.FullName,Editor,Editor+".exe"))) continue;
+                    var version = SlotVersion(slot.FullName);
+                    if (ValidVersion(version)) found = new RunningEditor(version,process);
+                }
+                catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or IOException) { }
+                finally { if (found?.Process != process) process.Dispose(); }
+            }
+            return found;
         }
         public async Task Install(Release r, IProgress<Transfer> progress, CancellationToken ct)
         {

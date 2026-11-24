@@ -34,7 +34,10 @@ public sealed partial class Distribution
     private string FindSlot(string version) => ValidVersion(version) ? Directory.EnumerateDirectories(Versions).FirstOrDefault(p => SlotVersion(p) == version) : null;
     private FileStream AcquireLibrary()
     {
-        var gate = new FileStream(Path.Combine(Root,"library.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None);
+        FileStream gate;
+        try { gate = new FileStream(Path.Combine(Root,"library.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None); }
+        catch (IOException ex) when ((ex.HResult & 0xffff) is 32 or 33)
+        { throw new IOException("版本库正在执行其他操作，请等待任务结束。",ex); }
         try { Recover(); return gate; } catch { gate.Dispose(); throw; }
     }
     private void Recover()
@@ -106,6 +109,7 @@ public sealed partial class Distribution
     {
         using var gate = AcquireLibrary();
         var slot=FindSlot(release.version) ?? throw new IOException("本地版本不存在。");
+        CheckClosed(slot);
         var index=await IndexFor(release,ct).ConfigureAwait(false);
         return await Task.Run(()=> {
             foreach (var f in SafeFiles(slot)) ct.ThrowIfCancellationRequested();
