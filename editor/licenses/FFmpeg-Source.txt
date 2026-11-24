@@ -1,0 +1,4 @@
+FFmpeg 7.1 essentials build from Gyan Doshi, as bundled in imageio-ffmpeg.
+License: GNU GPL version 3 or later.
+FFmpeg source: https://github.com/FFmpeg/FFmpeg/tree/n7.1
+Windows build and source information: https://www.gyan.dev/ffmpeg/builds/

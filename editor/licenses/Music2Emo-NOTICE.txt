@@ -1,0 +1,11 @@
+Music2Emo and MERT
+
+Music2Emo is by Jaeyong Kang and Dorien Herremans at the Audio, Music, and AI (AMAAI) Lab.
+Upstream software (MIT): https://github.com/AMAAI-Lab/Music2Emotion
+Upstream Music2Emo checkpoint package (Apache-2.0): https://huggingface.co/amaai-lab/music2emo
+MERT-v1-95M by Multimodal Art Projection (CC BY-NC 4.0): https://huggingface.co/m-a-p/MERT-v1-95M
+CC BY-NC 4.0 license: https://creativecommons.org/licenses/by-nc/4.0/
+
+The C++ port uses ONNX Runtime with separately installed models. The native frontend uses fixed-tuning
+constant-Q features and estimates key from chord durations. The app evaluates 30-second windows.
+Source: https://github.com/furinasdog/music2emo-native

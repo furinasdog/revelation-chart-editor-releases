@@ -1,0 +1,18 @@
+{
+	"basic": {"chartName": "乐句与蒙版练习", "difficulty": "HD", "license": "CC0-1.0"},
+	"data": [
+		{"type": "setCover", "startTime": 0, "imagePath": "study-opening-mask.png"},
+		{"type": "note", "startTime": 100, "endTime": 1100, "position": [620,500], "chartEditor": {"track": 0}},
+		{"type": "note", "startTime": 600, "endTime": 1600, "position": [820,500], "chartEditor": {"track": 1}},
+		{"type": "drag", "startTime": 1100, "endTime": 2100, "position": [850,500], "move": {"enabled": true, "type": "linear", "end": [1090,500]}, "chartEditor": {"track": 2}},
+		{"type": "hold", "startTime": 2800, "judgeTime": 3800, "endTime": 5800, "position": [650,650], "line": [[650,650],[1000,650],[830,630]], "chartEditor": {"track": 1}},
+		{"type": "setBottomBg", "startTime": 6800, "imagePath": "study-peak.png"},
+		{"type": "note", "startTime": 5900, "endTime": 6900, "position": [640,400], "chartEditor": {"track": 0}},
+		{"type": "note", "startTime": 5900, "endTime": 6900, "position": [1040,640], "chartEditor": {"track": 3}}
+	],
+	"anim_rect_slots": [[
+		{"pos": {"x": 490, "y": 880}, "width": 300, "height": 12, "rgba": {"r": 0.4, "g": 0.7, "b": 0.9, "a": 0}},
+		{"startTime": 6800, "duration": 800, "track": 0, "pos": {"x": 850, "y": 880}, "rgba": {"r": 0.4, "g": 0.7, "b": 0.9, "a": 0.3}},
+		{"startTime": 7600, "duration": 1200, "track": 0, "rgba": {"r": 0.4, "g": 0.7, "b": 0.9, "a": 0}}
+	]]
+}

@@ -1,0 +1,24 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="更好的制谱器 Hub" Manufacturer="Revelation Hub" Version="1.1.0" UpgradeCode="D7B58CEC-A20B-4241-AB97-718966748E29" Language="2052" Codepage="936" Scope="perUser" InstallerVersion="500">
+    <MajorUpgrade DowngradeErrorMessage="已安装更高版本的制谱器 Hub。" />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="medium" />
+    <StandardDirectory Id="ProgramMenuFolder"/>
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsDirectory" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="RevelationHub">
+          <Component Id="HubApp" Guid="6D2D9E72-97F3-4B3F-B8B0-CBBD415B6F43">
+            <File Id="HubExe" Source="$(var.PublishDir)\RevelationHub.exe"/>
+            <File Id="GplLicense" Source="$(var.LicenseFile)" Name="LICENSE.txt"/>
+            <File Id="RuntimeLicense" Source="$(sys.SOURCEFILEDIR)licenses\dotnet-LICENSE.txt"/>
+            <File Id="WpfLicense" Source="$(sys.SOURCEFILEDIR)licenses\windowsdesktop-LICENSE.txt"/>
+            <File Id="RuntimeNotices" Source="$(sys.SOURCEFILEDIR)licenses\dotnet-THIRD-PARTY-NOTICES.txt"/>
+            <Shortcut Id="StartMenu" Directory="ProgramMenuFolder" Name="更好的制谱器 Hub" Target="[#HubExe]" WorkingDirectory="INSTALLFOLDER"/>
+            <RemoveFolder Id="RemoveHubFolder" Directory="INSTALLFOLDER" On="uninstall"/>
+            <RegistryValue Root="HKCU" Key="Software\RevelationHub" Name="Installed" Type="integer" Value="1" KeyPath="yes"/>
+          </Component>
+        </Directory>
+      </Directory>
+    </StandardDirectory>
+    <Feature Id="Main" Title="更好的制谱器 Hub"><ComponentRef Id="HubApp"/></Feature>
+  </Package>
+</Wix>
