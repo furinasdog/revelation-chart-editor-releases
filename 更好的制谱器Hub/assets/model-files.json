@@ -1,0 +1,171 @@
+{
+  "madmom": [
+    {
+      "path": "beats/2015/beats_blstm_1.onnx",
+      "size": 372414,
+      "sha256": "65e7f716149582af2e7bbad82446185498c87c54516d3106867b82bad3f2a62f"
+    },
+    {
+      "path": "beats/2015/beats_blstm_2.onnx",
+      "size": 372414,
+      "sha256": "9938a61ef6ddd65c4e9435b4ef5102e7a597be7a9b0952bce8bd988b69dc350f"
+    },
+    {
+      "path": "beats/2015/beats_blstm_3.onnx",
+      "size": 372414,
+      "sha256": "4ce23bbe9aa4d7ad219a2c283510516023a5d275743df4f1a114a91178a37773"
+    },
+    {
+      "path": "beats/2015/beats_blstm_4.onnx",
+      "size": 372414,
+      "sha256": "e236a6b241e44b384f9f5e698b6d0dbdc139efd10a850ef5cf013c241d4b0a0c"
+    },
+    {
+      "path": "beats/2015/beats_blstm_5.onnx",
+      "size": 372414,
+      "sha256": "fa6ebadb1082a3c64702bfcc3ed47a697f18bd07a3a90f667cfd2b1b56af41cc"
+    },
+    {
+      "path": "beats/2015/beats_blstm_6.onnx",
+      "size": 372414,
+      "sha256": "555bc08113ab371993677d9f055f785ef13697ee8b5ecba13e11e0e207e64b15"
+    },
+    {
+      "path": "beats/2015/beats_blstm_7.onnx",
+      "size": 372414,
+      "sha256": "95d05ecaf84d4863abd56ceb8ca0e09c797da0c8453e100b8025b5c932da0432"
+    },
+    {
+      "path": "beats/2015/beats_blstm_8.onnx",
+      "size": 372414,
+      "sha256": "e08c820756333a54775bff17c5805f9515ae89f4959963a2cc921c68a18174a9"
+    },
+    {
+      "path": "downbeats/2016/downbeats_blstm_1.onnx",
+      "size": 411244,
+      "sha256": "2cc4eb72c891d17adced12caf57ac2d90c437947aac3a3c11e6119fd07d16783"
+    },
+    {
+      "path": "downbeats/2016/downbeats_blstm_2.onnx",
+      "size": 411244,
+      "sha256": "c05f182c004099034c43f19a43f363d970515748fd4454173f6ebc481e6fb75f"
+    },
+    {
+      "path": "downbeats/2016/downbeats_blstm_3.onnx",
+      "size": 411244,
+      "sha256": "d324cf861a770a8b7a9b5d008146b4dd6f8637d6ba74ae80538eec19b2303e3f"
+    },
+    {
+      "path": "downbeats/2016/downbeats_blstm_4.onnx",
+      "size": 411244,
+      "sha256": "b39412687334e2449a5fdb6b5fbec2aa8fd7680659c7200573554983356a65ff"
+    },
+    {
+      "path": "downbeats/2016/downbeats_blstm_5.onnx",
+      "size": 411244,
+      "sha256": "1805742516923d5a6b5bbd2bb1c3ceda870be3001cad0269b5adc73f5339a194"
+    },
+    {
+      "path": "downbeats/2016/downbeats_blstm_6.onnx",
+      "size": 411244,
+      "sha256": "4311418bde0ef11b222c7e39d86bcaaefcc4a9120c7e03e98b82ac7331dae51e"
+    },
+    {
+      "path": "downbeats/2016/downbeats_blstm_7.onnx",
+      "size": 411244,
+      "sha256": "d9e064d7bf2185ab8b8d7cbaa013367fe8cda4fbe202fd94c8a19c11fd72ff7d"
+    },
+    {
+      "path": "downbeats/2016/downbeats_blstm_8.onnx",
+      "size": 411244,
+      "sha256": "ded1628109865d0986d0f152ad04bc8aaeba99102e2b9f1372d3492a4814be66"
+    },
+    {
+      "path": "onsets/2013/onsets_brnn_1.onnx",
+      "size": 100378,
+      "sha256": "34dab1f69e0b8d3f6166be4239f20d4cff3029190959591213593784c1922550"
+    },
+    {
+      "path": "onsets/2013/onsets_brnn_2.onnx",
+      "size": 100378,
+      "sha256": "183b6cba6e4beab872daa6ed58ce909c3ca46e84b840f8871b5d7c00b0176dcb"
+    },
+    {
+      "path": "onsets/2013/onsets_brnn_3.onnx",
+      "size": 100378,
+      "sha256": "3a34cc60514279c9ae7c57f41dddf52b522dc3ec2a20b75d991f08d54a846a1f"
+    },
+    {
+      "path": "onsets/2013/onsets_brnn_4.onnx",
+      "size": 100378,
+      "sha256": "d458ad4cdddf157194f5c679eaccb1d3a9485595e06ec62a75b1a5119f7a3929"
+    },
+    {
+      "path": "onsets/2013/onsets_brnn_5.onnx",
+      "size": 100378,
+      "sha256": "564803d516fc41a0fc5e4fdf583b13155a13743a38cdd613acb8b52a59287438"
+    },
+    {
+      "path": "onsets/2013/onsets_brnn_6.onnx",
+      "size": 100378,
+      "sha256": "e4e1b8ae09bdd22b3cabf8034cbfa6038a5ba2ea9e7c85ed8e0ff1f74e4443cb"
+    },
+    {
+      "path": "onsets/2013/onsets_brnn_7.onnx",
+      "size": 100378,
+      "sha256": "072ed7181b3c0a5ec245a3628a2d7acc3590c9cf85ab4c0057cac8af9c6e34ba"
+    },
+    {
+      "path": "onsets/2013/onsets_brnn_8.onnx",
+      "size": 100378,
+      "sha256": "a988b91d13b389b23910dc039c9c5621973be02558271101a2c6dab4607a0215"
+    },
+    {
+      "path": "onsets/2013/onsets_cnn.onnx",
+      "size": 1166650,
+      "sha256": "ff0547c49b7ceff082db229957649dba97b0b21790df4e159baf21ed191d9d36"
+    }
+  ],
+  "music2emo": [
+    {
+      "path": "btc.onnx",
+      "size": 13070783,
+      "sha256": "884e4d8c3cd20cb6a21d73cb720105a21f11356df5bf9fff7e41e8ad627fd9ad"
+    },
+    {
+      "path": "emotion.onnx",
+      "size": 4327016,
+      "sha256": "358d572026ebc725edb56331c53d0b0927d046ecece112ef19556cb250f86bc3"
+    },
+    {
+      "path": "LICENSE-MERT-CC-BY-NC-4.0.txt",
+      "size": 19347,
+      "sha256": "41003d4a74749c0220e33dd415042164b5a1093ed401f36277234f772d22d3d0"
+    },
+    {
+      "path": "LICENSE-Music2Emo-Apache-2.0.txt",
+      "size": 11358,
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "path": "mert.onnx",
+      "size": 235865585,
+      "sha256": "442c3a15127fb042eb75736d843f8c6903a901341fd38d3422efbc0962c36609"
+    },
+    {
+      "path": "metadata.txt",
+      "size": 514,
+      "sha256": "be822304684adbdd6061efd79fb0a4d92b7518d51d20f1aa2b2addd8e278aa8e"
+    },
+    {
+      "path": "README.txt",
+      "size": 818,
+      "sha256": "b53c7d84dadf7221cd5a5a9a8c59df9967264146a8686cbdff4709dbbb565a9c"
+    },
+    {
+      "path": "SHA256SUMS.txt",
+      "size": 233,
+      "sha256": "e8feb1cfbbe3ee594b9a0d43314246b71847530e5dbcead2d059735141adf15f"
+    }
+  ]
+}

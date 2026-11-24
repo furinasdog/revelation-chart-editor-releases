@@ -31,7 +31,7 @@ namespace RevelationHub
         public Transfer(string stage, long bytes = 0, long total = 0) { Stage = stage; Bytes = bytes; Total = total; }
     }
 
-    public sealed class Distribution
+    public sealed partial class Distribution
     {
         public const string Repository = "furinasdog/revelation-chart-editor-releases";
         public const string Editor = "更好的制谱器";
@@ -51,6 +51,7 @@ namespace RevelationHub
             Root = root;
             client = http;
             Directory.CreateDirectory(Versions);
+            try { using var gate = AcquireLibrary(); } catch (IOException) { /* Another Hub may be installing. */ }
         }
         private static string Embedded(string name)
         {
@@ -59,6 +60,16 @@ namespace RevelationHub
                 return reader.ReadToEnd();
         }
         internal static Release[] ReadCatalog(string signed, string product = "editor")
+        {
+            var doc = ReadSigned<Index>(signed);
+            if (doc == null || doc.schema != 1 || (doc.product ?? "editor") != product || doc.releases == null || doc.releases.Length > 1000) throw new InvalidDataException("版本目录格式有误。");
+            var seen = new HashSet<string>();
+            foreach (var r in doc.releases)
+                if (r == null || !ValidVersion(r.version) || !seen.Add(r.version) || r.size <= 0 || r.size > MaxPackage ||
+                    !Regex.IsMatch(r.sha256 ?? "", "^[a-fA-F0-9]{64}$")) throw new InvalidDataException("发行条目有误。");
+            return doc.releases.OrderByDescending(r => Version.Parse(r.version)).ToArray();
+        }
+        internal static T ReadSigned<T>(string signed)
         {
             var envelope = JsonSerializer.Deserialize<Envelope>(signed);
             if (envelope?.payload == null || envelope.signature == null) throw new InvalidDataException("版本目录缺少签名。");
@@ -69,13 +80,7 @@ namespace RevelationHub
                 if (!rsa.VerifyData(bytes, Convert.FromBase64String(envelope.signature), HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1))
                     throw new InvalidDataException("版本目录签名无效。");
             }
-            var doc = JsonSerializer.Deserialize<Index>(bytes);
-            if (doc == null || doc.schema != 1 || (doc.product ?? "editor") != product || doc.releases == null || doc.releases.Length > 1000) throw new InvalidDataException("版本目录格式有误。");
-            var seen = new HashSet<string>();
-            foreach (var r in doc.releases)
-                if (r == null || !ValidVersion(r.version) || !seen.Add(r.version) || r.size <= 0 || r.size > MaxPackage ||
-                    !Regex.IsMatch(r.sha256 ?? "", "^[a-fA-F0-9]{64}$")) throw new InvalidDataException("发行条目有误。");
-            return doc.releases.OrderByDescending(r => Version.Parse(r.version)).ToArray();
+            return JsonSerializer.Deserialize<T>(bytes);
         }
         private static bool ValidVersion(string value) =>
             Regex.IsMatch(value ?? "", @"^[0-9]{1,5}\.[0-9]{1,5}\.[0-9]{1,5}$") && Version.TryParse(value, out _);
@@ -148,10 +153,10 @@ namespace RevelationHub
         public string Executable(string version)
         {
             if (!ValidVersion(version)) throw new InvalidDataException("版本号无效。");
-            return Path.Combine(Versions, version, Editor, Editor + ".exe");
+            return Path.Combine(FindSlot(version) ?? Path.Combine(Versions, version), Editor, Editor + ".exe");
         }
-        public bool Installed(string version) => File.Exists(Executable(version)) && File.Exists(Path.ChangeExtension(Executable(version), ".pck"));
-        public IEnumerable<string> LocalVersions() => Directory.EnumerateDirectories(Versions).Select(Path.GetFileName).Where(v => ValidVersion(v) && Installed(v));
+        public bool Installed(string version) => FindSlot(version) != null && File.Exists(Executable(version)) && File.Exists(Path.ChangeExtension(Executable(version), ".pck"));
+        public IEnumerable<string> LocalVersions() => Directory.EnumerateDirectories(Versions).Select(SlotVersion).Where(ValidVersion).Distinct();
         public void Launch(string version)
         {
             var exe = Executable(version);
@@ -160,8 +165,12 @@ namespace RevelationHub
         }
         public async Task Install(Release r, IProgress<Transfer> progress, CancellationToken ct)
         {
-            var destination = Path.GetDirectoryName(Path.GetDirectoryName(Executable(r.version)));
+            using var gate = AcquireLibrary();
+            if (!ValidVersion(r.version)) throw new InvalidDataException("版本号无效。");
             if (Installed(r.version)) return;
+            if (FindSlot(r.version) != null) throw new IOException("本地版本已损坏，请从已安装页面校验、修复。");
+            var destination = Path.Combine(Versions,r.version);
+            if (Directory.Exists(destination)) destination += "-" + Guid.NewGuid().ToString("N");
             var scratch = Path.Combine(Root, "staging", Guid.NewGuid().ToString("N"));
             var unpacked = Path.Combine(scratch, "package");
             Directory.CreateDirectory(scratch);
@@ -177,6 +186,7 @@ namespace RevelationHub
                 ct.ThrowIfCancellationRequested();
                 if (!File.Exists(Path.Combine(unpacked, Editor, Editor + ".exe")) || !File.Exists(Path.Combine(unpacked, Editor, Editor + ".pck")))
                     throw new InvalidDataException("发行包缺少主程序或 PCK。");
+                File.WriteAllText(Path.Combine(unpacked, Receipt),r.version);
                 try { Directory.Move(unpacked, destination); }
                 catch (IOException) when (Installed(r.version)) { /* Another Hub completed this version first. */ }
             }

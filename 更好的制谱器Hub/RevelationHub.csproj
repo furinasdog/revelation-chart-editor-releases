@@ -7,7 +7,7 @@
     <AssemblyName>RevelationHub</AssemblyName>
     <RootNamespace>RevelationHub</RootNamespace>
     <ApplicationIcon>assets/Revelation.ico</ApplicationIcon>
-    <Version>1.1.2</Version>
+    <Version>1.2.0</Version>
     <AssemblyTitle>更好的制谱器Hub</AssemblyTitle>
     <Product>更好的制谱器Hub</Product>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
@@ -23,5 +23,8 @@
     <Resource Include="assets/Revelation.ico" />
     <EmbeddedResource Include="publisher.xml" />
     <EmbeddedResource Include="catalog.signed.json" />
+    <EmbeddedResource Include="manifests/*.json" LogicalName="RevelationHub.manifests.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="assets/model-files.json" />
+    <EmbeddedResource Include="guides/*.md" LogicalName="RevelationHub.guides.%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

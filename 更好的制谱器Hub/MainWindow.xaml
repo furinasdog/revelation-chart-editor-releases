@@ -3,26 +3,33 @@
     <Grid.ColumnDefinitions><ColumnDefinition Width="185"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
     <Border Background="#101216" BorderThickness="0,0,1,0" BorderBrush="#2F343B" Padding="15,30">
       <DockPanel>
-        <StackPanel DockPanel.Dock="Top">
+        <StackPanel DockPanel.Dock="Bottom">
+          <TextBlock x:Name="HubVersionLabel" Foreground="{StaticResource Muted}" FontSize="12" Margin="3,8,0,8"/>
+          <Button Content="问题反馈" Click="FeedbackClick" Margin="0,0,0,6" ToolTip="在浏览器中打开 GitHub Issues"/>
+          <Button Content="打开安装目录" Click="OpenFolder"/>
+        </StackPanel>
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel x:Name="Navigation">
           <StackPanel Orientation="Horizontal" Margin="3,0,0,32">
             <Image Width="31" Height="31" Source="assets/Revelation.ico" RenderOptions.BitmapScalingMode="HighQuality"/>
             <TextBlock Margin="9,0,0,0" VerticalAlignment="Center" FontSize="16" FontWeight="SemiBold" Text="制谱器 Hub"/>
           </StackPanel>
           <Button x:Name="LibraryTab" Content="版本库" Click="ShowLibrary" HorizontalContentAlignment="Left" Margin="0,0,0,6"/>
           <Button x:Name="InstalledTab" Content="已安装" Click="ShowInstalled" HorizontalContentAlignment="Left"/>
-        </StackPanel>
-        <StackPanel VerticalAlignment="Bottom">
-          <TextBlock x:Name="HubVersionLabel" Foreground="{StaticResource Muted}" FontSize="12" Margin="3,0,0,8"/>
-          <Button Content="问题反馈" Click="FeedbackClick" Margin="0,0,0,6" ToolTip="在浏览器中打开 GitHub Issues"/>
-          <Button Content="打开安装目录" Click="OpenFolder" ToolTip="在资源管理器中打开各版本的安装位置"/>
-        </StackPanel>
+          <Separator Margin="4,10"/>
+          <Button Content="模型管理" Click="NavigateClick" Margin="0,0,0,4"/>
+          <Button Content="编辑器配置" Click="NavigateClick" Margin="0,0,0,4"/>
+          <Button Content="参考工程" Click="NavigateClick" Margin="0,0,0,4"/>
+          <Separator Margin="4,10"/>
+          <Button Content="使用文档" Click="NavigateClick" Margin="0,0,0,4"/>
+          <Button Content="Hub 设置" Click="NavigateClick"/>
+        </StackPanel></ScrollViewer>
       </DockPanel>
     </Border>
-    <Grid Grid.Column="1" Margin="32,30">
+    <Grid x:Name="ContentArea" Grid.Column="1" Margin="28,22">
       <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
       <DockPanel Margin="0,0,0,14"><Button x:Name="RefreshButton" DockPanel.Dock="Right" Content="刷新版本" Click="RefreshClick" VerticalAlignment="Center"/><TextBlock x:Name="PageTitle" Text="版本库" FontSize="32" FontWeight="SemiBold"/></DockPanel>
       <TextBlock Grid.Row="1" x:Name="CatalogStatus" Foreground="{StaticResource Muted}" Margin="0,0,0,20" AutomationProperties.LiveSetting="Polite"/>
-      <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel>
+      <ScrollViewer x:Name="LibraryBody" Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel>
         <DockPanel x:Name="UpdatePanel" Visibility="Collapsed" Margin="0,0,6,16">
           <Button x:Name="ApplyButton" DockPanel.Dock="Right" Content="重启并更新" Click="ApplyClick" Visibility="Collapsed"/>
           <TextBlock x:Name="UpdateStatus" VerticalAlignment="Center" AutomationProperties.LiveSetting="Polite"/>
@@ -32,7 +39,14 @@
         </Border>
         <StackPanel x:Name="Cards"/>
       </StackPanel></ScrollViewer>
-      <TextBlock Grid.Row="3" x:Name="EmptyState" Foreground="{StaticResource Muted}" Margin="0,12,0,0"/>
+      <ScrollViewer x:Name="ManagerBody" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel x:Name="Manager" Margin="0,0,8,0"/></ScrollViewer>
+      <StackPanel Grid.Row="3">
+        <TextBlock x:Name="EmptyState" Foreground="{StaticResource Muted}" Margin="0,8,0,0"/>
+        <DockPanel x:Name="JobPanel" Visibility="Collapsed" Margin="0,8,0,0">
+          <Button x:Name="JobCancel" Content="取消" DockPanel.Dock="Right" Click="CancelJob"/>
+          <StackPanel><TextBlock x:Name="JobStatus" AutomationProperties.LiveSetting="Polite"/><ProgressBar x:Name="JobProgress" Height="4" Margin="0,4,12,0"/></StackPanel>
+        </DockPanel>
+      </StackPanel>
     </Grid>
   </Grid>
 </Window>

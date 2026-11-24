@@ -32,7 +32,7 @@ internal sealed class HubServices(string root, HttpClient http)
         finally { File.Delete(temp); }
     }
 
-    private async Task<T> ReadFeed<T>(string name, Func<string,T> parse, CancellationToken ct)
+    internal async Task<T> ReadFeed<T>(string name, Func<string,T> parse, CancellationToken ct, int limit = 128 * 1024)
     {
         string cache = Path.Combine(root, name);
         string raw = $"https://raw.githubusercontent.com/{Distribution.Repository}/main/{name}";
@@ -45,7 +45,7 @@ internal sealed class HubServices(string root, HttpClient http)
                 using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
                 response.EnsureSuccessStatusCode();
                 using var buffer = new MemoryStream();
-                await Distribution.CopyLimited(response, buffer, 128 * 1024, timeout.Token, null).ConfigureAwait(false);
+                await Distribution.CopyLimited(response, buffer, limit, timeout.Token, null).ConfigureAwait(false);
                 string json = Encoding.UTF8.GetString(buffer.ToArray());
                 T result = parse(json);
                 Save(cache, json);

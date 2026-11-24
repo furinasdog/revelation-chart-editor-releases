@@ -1,11 +1,25 @@
 using System;
 using System.IO;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
 
 namespace RevelationHub
 {
     public partial class App : Application
     {
+        private void ButtonMotion(object sender, MouseEventArgs e) => Animate((Button)sender,((Button)sender).IsMouseOver?1.025:1);
+        private void ButtonPress(object sender, MouseButtonEventArgs e) => Animate((Button)sender,e.ButtonState==MouseButtonState.Pressed?.97:1.025);
+        private static void Animate(Button b,double target)
+        {
+            if (Window.GetWindow(b) is not MainWindow w || !w.AnimateControls) return;
+            if(b.RenderTransform is not ScaleTransform scale){scale=new ScaleTransform();b.RenderTransform=scale;}
+            var animation=new DoubleAnimation(target,TimeSpan.FromMilliseconds(140)){EasingFunction=new CubicEase{EasingMode=EasingMode.EaseOut}};
+            scale.BeginAnimation(ScaleTransform.ScaleXProperty,animation);
+            scale.BeginAnimation(ScaleTransform.ScaleYProperty,animation);
+        }
         protected override async void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);

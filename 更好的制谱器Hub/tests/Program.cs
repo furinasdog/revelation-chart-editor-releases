@@ -10,7 +10,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using RevelationHub;
 
-internal class Program
+internal partial class Program
 {
     sealed class Routes : HttpMessageHandler
     {
@@ -81,6 +81,7 @@ internal class Program
     }
     static async Task Main(string[] args)
     {
+        if (args is ["--management",var oldZip,var nextZip,var delta,var signedCatalog]) { await CheckManagement(oldZip,nextZip,delta,signedCatalog);return; }
         if (args is ["--hub", var msi, var manifest, var editorCatalog])
         {
             await CheckHubServices(msi, manifest, editorCatalog);
