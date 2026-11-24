@@ -209,7 +209,7 @@ namespace RevelationHub
             bool installed = view.Installed;
             bool damaged = !installed && view.Present;
             var panel = new StackPanel();
-            var card = new Border { Style=(Style)FindResource("Card"), Child=panel };
+            var card = new PageCard((Style)FindResource("Card"),panel);
             var header = new DockPanel();
             var version = Label("v" + r.version, 20, "Ink");
             version.FontWeight = FontWeights.SemiBold;

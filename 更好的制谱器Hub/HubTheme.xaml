@@ -62,16 +62,18 @@
       <EventSetter Event="MouseEnter" Handler="ButtonMotion"/><EventSetter Event="MouseLeave" Handler="ButtonMotion"/>
       <EventSetter Event="LostMouseCapture" Handler="ButtonMotion"/>
       <EventSetter Event="PreviewMouseLeftButtonDown" Handler="ButtonPress"/><EventSetter Event="PreviewMouseLeftButtonUp" Handler="ButtonPress"/>
+      <EventSetter Event="PreviewKeyDown" Handler="ButtonKey"/><EventSetter Event="PreviewKeyUp" Handler="ButtonKey"/>
+      <EventSetter Event="LostKeyboardFocus" Handler="ButtonBlur"/>
       <Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocusMark}"/><Setter Property="Background" Value="{StaticResource Field}"/>
       <Setter Property="Foreground" Value="{StaticResource Ink}"/><Setter Property="BorderBrush" Value="{StaticResource FieldEdge}"/>
       <Setter Property="BorderThickness" Value="1"/><Setter Property="Padding" Value="12,5"/><Setter Property="MinHeight" Value="30"/>
       <Setter Property="HorizontalContentAlignment" Value="Center"/><Setter Property="Cursor" Value="Hand"/>
       <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
-        <Grid ClipToBounds="True">
+        <Grid ClipToBounds="True" Background="Transparent"><Grid x:Name="PressFace" RenderTransformOrigin=".5,.5">
           <Border x:Name="Face" CornerRadius="4" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"/>
           <Border x:Name="HoverFill" CornerRadius="3" Margin="2" Background="{StaticResource HoverInk}" Opacity="0" IsHitTestVisible="False"/>
           <ContentPresenter Margin="{TemplateBinding Padding}" VerticalAlignment="Center" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" RecognizesAccessKey="True"/>
-        </Grid>
+        </Grid></Grid>
         <ControlTemplate.Triggers>
           <Trigger Property="p:Selector.IsSelected" Value="True"><Setter TargetName="Face" Property="Background" Value="{StaticResource SelectedFill}"/><Setter TargetName="Face" Property="BorderBrush" Value="{StaticResource Accent}"/></Trigger>
           <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value=".55"/></Trigger>
@@ -83,16 +85,18 @@
       <Setter Property="Margin" Value="4,2"/><Setter Property="MinHeight" Value="36"/>
       <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
         <Grid ClipToBounds="True" Background="Transparent">
-          <Border x:Name="Face" Background="{TemplateBinding Background}" CornerRadius="4"/>
+          <Border x:Name="SelectionFill" Background="{StaticResource SelectedFill}" CornerRadius="4" Opacity="0"/>
           <Border x:Name="HoverFill" Background="{StaticResource HoverInk}" Opacity="0" Margin="2" CornerRadius="3" IsHitTestVisible="False"/>
-          <Border x:Name="Bar" HorizontalAlignment="Left" Margin="0,8" CornerRadius="1" Width="3" Background="{StaticResource Accent}" Visibility="Hidden"/>
-          <StackPanel Orientation="Horizontal" Margin="13,0,4,0" VerticalAlignment="Center">
+          <Border x:Name="Bar" HorizontalAlignment="Left" Margin="0,8" CornerRadius="1" Width="3" Background="{StaticResource Accent}" RenderTransformOrigin=".5,.5">
+            <Border.RenderTransform><ScaleTransform ScaleY="0"/></Border.RenderTransform>
+          </Border>
+          <StackPanel x:Name="NavLabel" Orientation="Horizontal" Margin="13,0,4,0" VerticalAlignment="Center">
             <TextBlock FontFamily="Segoe MDL2 Assets" Text="{TemplateBinding CommandParameter}" Width="24" VerticalAlignment="Center"/>
             <ContentPresenter VerticalAlignment="Center"/>
           </StackPanel>
         </Grid>
         <ControlTemplate.Triggers>
-          <Trigger Property="p:Selector.IsSelected" Value="True"><Setter TargetName="Face" Property="Background" Value="{StaticResource SelectedFill}"/><Setter TargetName="Bar" Property="Visibility" Value="Visible"/><Setter Property="Foreground" Value="{StaticResource Accent}"/></Trigger>
+          <Trigger Property="p:Selector.IsSelected" Value="True"><Setter TargetName="SelectionFill" Property="Opacity" Value="1"/><Setter Property="Foreground" Value="{StaticResource Accent}"/></Trigger>
         </ControlTemplate.Triggers>
       </ControlTemplate></Setter.Value></Setter>
     </Style>
@@ -100,16 +104,16 @@
       <Setter Property="Foreground" Value="#FFFFFF"/><Setter Property="Background" Value="Transparent"/><Setter Property="Padding" Value="13,3"/><Setter Property="Margin" Value="1,0"/>
       <Setter Property="MinHeight" Value="30"/><Setter Property="MinWidth" Value="63"/>
       <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
-        <Grid ClipToBounds="True">
-          <Border x:Name="Face" Background="{TemplateBinding Background}" CornerRadius="15"/>
+        <Grid ClipToBounds="True" Background="Transparent">
+          <Border x:Name="SelectionFill" Background="White" Opacity="0" CornerRadius="15"/>
           <Border x:Name="HoverFill" Background="#A9B1C8" Opacity="0" CornerRadius="13" Margin="2" IsHitTestVisible="False"/>
-          <StackPanel Orientation="Horizontal" Margin="{TemplateBinding Padding}" HorizontalAlignment="Center" VerticalAlignment="Center">
+          <StackPanel x:Name="NavLabel" Orientation="Horizontal" Margin="{TemplateBinding Padding}" HorizontalAlignment="Center" VerticalAlignment="Center">
             <TextBlock FontFamily="Segoe MDL2 Assets" Text="{TemplateBinding CommandParameter}" Margin="0,0,5,0" VerticalAlignment="Center"/>
             <ContentPresenter VerticalAlignment="Center"/>
           </StackPanel>
         </Grid>
         <ControlTemplate.Triggers>
-          <Trigger Property="p:Selector.IsSelected" Value="True"><Setter TargetName="Face" Property="Background" Value="White"/><Setter Property="Foreground" Value="{StaticResource Ink}"/></Trigger>
+          <Trigger Property="p:Selector.IsSelected" Value="True"><Setter TargetName="SelectionFill" Property="Opacity" Value="1"/><Setter Property="Foreground" Value="{StaticResource Ink}"/></Trigger>
         </ControlTemplate.Triggers>
       </ControlTemplate></Setter.Value></Setter>
     </Style>

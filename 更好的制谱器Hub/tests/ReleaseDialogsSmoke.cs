@@ -1,9 +1,11 @@
 using System;
+using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Media;
 using RevelationHub;
 
 internal partial class Program
@@ -22,6 +24,9 @@ internal partial class Program
         Check(!overlay.IsVisible,"An acknowledged announcement does not interrupt another refresh");
         Click("公告");Pump(150);
         Check(Shows("试验公告"),"Announcement can be reopened from the sidebar");
+        var card=(Border)w.FindName("FeedbackCard");
+        var shift=(TranslateTransform)((TransformGroup)card.RenderTransform).Children[1];
+        Check(!w.AnimateControls || shift.HasAnimatedProperties,"Announcement card has its own settling motion");
         var hubUpdate = typeof(MainWindow).GetMethod("AnnounceHubUpdate", BindingFlags.NonPublic | BindingFlags.Instance);
         var release = new Release { version = "2.0.0", notes = "新版本说明" };
         hubUpdate.Invoke(w,[release,false,false]);
@@ -38,10 +43,29 @@ internal partial class Program
         Click("刷新版本");Pump(200);
         Check(Shows("公告内容有变更"), "A revised notice with the same title is shown again");
         Click("知道了");Pump(170);
-        Click("设置");Pump(25);
+        bool SawFrame(Func<bool> condition)
+        {
+            var clock=Stopwatch.StartNew();
+            while (!condition() && clock.ElapsedMilliseconds<400) Pump(8);
+            return condition();
+        }
+        Click("设置");w.UpdateLayout();
         var body=(FrameworkElement)w.FindName("ManagerBody");
-        Check(!w.AnimateControls || (body.Opacity<1 && body.RenderTransform.Value.IsIdentity),"Page content fades in without changing its position");
-        Pump(260);
-        Check(body.Opacity==1,"Page content settles at full opacity");
+        var sections=Children<PageCard>(body).Where(card=>card.IsVisible).Take(2).ToArray();
+        Check(sections.Length==2 && body.Opacity==1 && body.RenderTransform.Value.IsIdentity,"The form stays anchored while its sections enter");
+        Check(!w.AnimateControls || SawFrame(()=>sections[0].Opacity>sections[1].Opacity),"New sections appear in reading order");
+        Pump(420);
+        Check(sections.All(card=>card.Opacity==1),"All sections settle at full opacity");
+        Click("Hub 设置");w.UpdateLayout();
+        var settings=Children<Button>(w).First(b=>b.IsVisible && Equals(b.Content,"Hub 设置"));
+        var bar=(Border)settings.Template.FindName("Bar",settings);
+        var scale=(ScaleTransform)bar.RenderTransform;
+        Check(!w.AnimateControls || SawFrame(()=>scale.ScaleY>0 && scale.ScaleY<1),"The rail indicator grows from its center");
+        Pump(370);
+        Check(scale.ScaleY==1,"The selected rail indicator settles at full height");
+        var motion=Children<CheckBox>(w).Single(b=>Equals(b.Content,"启用界面缓动动画"));
+        motion.IsChecked=false;Click("保存设置");
+        Click("编辑器配置");
+        Check(!w.AnimateControls && Children<PageCard>(body).All(c=>c.Opacity==1 && !c.HasAnimatedProperties),"Turning motion off makes a new page immediately usable");
     }
 }

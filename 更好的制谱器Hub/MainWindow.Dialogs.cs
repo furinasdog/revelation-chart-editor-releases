@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 
 namespace RevelationHub;
 
@@ -113,6 +114,7 @@ public partial class MainWindow
             restoreFocus = Keyboard.FocusedElement;
             FeedbackOverlay.Visibility = Visibility.Visible;
             Workspace.IsEnabled = TitleBar.IsEnabled = false;
+            DialogScrim.BeginAnimation(Brush.OpacityProperty,AnimateControls ? HubMotion.Tween(0,1,200) : null);
         }
         DisplayDialog(message, true);
     }
@@ -128,10 +130,11 @@ public partial class MainWindow
         UpdateDialogAction();
         if (!entering) return;
         DialogScroll.ScrollToHome();
-        FeedbackOverlay.BeginAnimation(OpacityProperty,null);
-        FeedbackOverlay.Opacity = 1;
-        EnterView(FeedbackCard,0,12,220);
-        if (AnimateControls) FeedbackOverlay.BeginAnimation(OpacityProperty,Ease(0,1,150));
+        FeedbackCard.Opacity = 1;
+        DialogShift.Y = DialogTilt.Angle = 0;
+        FeedbackCard.BeginAnimation(OpacityProperty,AnimateControls ? HubMotion.Tween(0,1,120,35) : null);
+        DialogShift.BeginAnimation(TranslateTransform.YProperty,AnimateControls ? HubMotion.Tween(20,0,300,35,true) : null);
+        DialogTilt.BeginAnimation(RotateTransform.AngleProperty,AnimateControls ? HubMotion.Tween(-2,0,285,35) : null);
         FeedbackOk.Focus();
     }
 
@@ -167,14 +170,19 @@ public partial class MainWindow
         }
         if (AnimateControls)
         {
-            double opacity = FeedbackOverlay.Opacity;
-            FeedbackOverlay.Opacity = 0;
-            FeedbackOverlay.BeginAnimation(OpacityProperty,Ease(opacity,0,130));
-            await Task.Delay(130);
+            double opacity = FeedbackCard.Opacity, y = DialogShift.Y, angle = DialogTilt.Angle;
+            FeedbackCard.Opacity = 0;
+            DialogShift.Y = 14;
+            DialogTilt.Angle = 2;
+            FeedbackCard.BeginAnimation(OpacityProperty, HubMotion.Tween(opacity,0,105));
+            DialogShift.BeginAnimation(TranslateTransform.YProperty,HubMotion.Tween(y,14,150));
+            DialogTilt.BeginAnimation(RotateTransform.AngleProperty,HubMotion.Tween(angle,2,150));
+            await Task.Delay(150);
         }
         if (lifetime.IsCancellationRequested) return;
         activeDialog = null;
         dismissing = false;
+        if (!invoke && pendingDialogs.Count > 0) { NextDialog(); return; }
         FeedbackOverlay.Visibility = Visibility.Collapsed;
         Workspace.IsEnabled = TitleBar.IsEnabled = true;
         if (restoreFocus is UIElement { IsVisible:true, IsEnabled:true } element) element.Focus();

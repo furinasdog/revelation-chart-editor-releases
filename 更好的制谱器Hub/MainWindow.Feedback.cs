@@ -2,6 +2,8 @@ using System;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Documents;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 
@@ -74,9 +76,51 @@ public partial class MainWindow
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
     }
 
-    private void FadePage(FrameworkElement page)
+    private void RevealSections(Panel panel)
     {
-        page.BeginAnimation(OpacityProperty, AnimateControls ? Ease(.50, 1, 220) : null);
+        int index = 0;
+        foreach (FrameworkElement item in panel.Children)
+        {
+            if (item is TabControl { SelectedItem: TabItem { Content: Panel form } }) RevealSections(form);
+            if (item is PageCard card)
+            {
+                card.Enter(index * 25, AnimateControls && index < 8);
+                index++;
+            }
+        }
+    }
+
+    private void SelectNavigation(Button button, bool selected)
+    {
+        if (Selector.GetIsSelected(button) == selected) return;
+        button.ApplyTemplate();
+        var fill = button.Template?.FindName("SelectionFill",button) as Border;
+        var bar = button.Template?.FindName("Bar",button) as Border;
+        var label = button.Template?.FindName("NavLabel",button) as FrameworkElement;
+        double oldOpacity = fill?.Opacity ?? 0;
+        var oldInk = (label?.GetValue(TextElement.ForegroundProperty) as SolidColorBrush)?.Color;
+        Selector.SetIsSelected(button,selected);
+        bool motion = AnimateControls && button.IsVisible;
+        if (fill != null)
+            fill.BeginAnimation(OpacityProperty, motion ? HubMotion.Tween(oldOpacity,selected ? 1 : 0,120) : null);
+        if (label != null && oldInk.HasValue && button.Foreground is SolidColorBrush ink)
+        {
+            var brush = new SolidColorBrush(ink.Color);
+            TextElement.SetForeground(label,brush);
+            if (motion) brush.BeginAnimation(SolidColorBrush.ColorProperty,
+                new ColorAnimation(oldInk.Value,ink.Color,TimeSpan.FromMilliseconds(120)) {
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }, FillBehavior = FillBehavior.Stop });
+        }
+        if (bar?.RenderTransform is ScaleTransform scale)
+        {
+            // Transforms declared in a WPF template may be frozen and shared.
+            if (scale.IsFrozen) bar.RenderTransform = scale = scale.Clone();
+            double from = scale.ScaleY;
+            double target = selected ? 1 : 0;
+            scale.ScaleY = target;
+            scale.BeginAnimation(ScaleTransform.ScaleYProperty, motion ?
+                HubMotion.Tween(from,target,selected ? 300 : 115,settle:selected) : null);
+        }
     }
 
     private void SetProgress(ProgressBar bar,double percent)

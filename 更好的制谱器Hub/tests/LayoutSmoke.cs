@@ -150,6 +150,12 @@ internal partial class Program
                     var counts=Children<TextBlock>(viewport).First(t=>t.Text.Contains("个模型及配套文件"));
                     var chrome=(FrameworkElement)button.Template.FindName("HoverFill",button);
                     var animate=typeof(HubTheme).GetMethod("Animate",BindingFlags.Static|BindingFlags.NonPublic);
+                    var pressFace=(FrameworkElement)button.Template.FindName("PressFace",button);
+                    var targetBounds=button.TransformToAncestor(w).TransformBounds(new Rect(button.RenderSize));
+                    animate.Invoke(null,new object[]{button,.24});Pump(100);
+                    Check(!w.AnimateControls || ((ScaleTransform)pressFace.RenderTransform).ScaleX<.97,"Press feedback compresses the painted button face");
+                    animate.Invoke(null,new object[]{button,0.0});Pump(330);
+                    Check(((ScaleTransform)pressFace.RenderTransform).ScaleX==1 && targetBounds==button.TransformToAncestor(w).TransformBounds(new Rect(button.RenderSize)),"Release restores the face while the clickable rectangle stays fixed");
                     foreach(var opacity in new[]{.15,.29,0})
                     {
                         animate.Invoke(null,new object[]{button,opacity});Pump(145);
@@ -186,9 +192,9 @@ internal partial class Program
                     var agentForm=(StackPanel)((TabItem)tabs.SelectedItem).Content;
                     Check(Grid.GetColumn(mark)==1 && Children<PasswordBox>(agentForm).Any(), "Agent tab selects the matching form");
                     if (w.AnimateControls)
-                        Check(((TranslateTransform)mark.RenderTransform).X < 0 && agentForm.RenderTransform.Value.IsIdentity && agentForm.Opacity < 1,
-                            "The selected indicator slides and the form fades in place");
-                    tabs.SelectedIndex=2;tabs.SelectedIndex=0;Pump(270);
+                        Check(((TranslateTransform)mark.RenderTransform).X < 0 && agentForm.RenderTransform.Value.IsIdentity && Children<PageCard>(agentForm).First().Opacity < 1,
+                            "The indicator travels while the form sections appear in place");
+                    tabs.SelectedIndex=2;tabs.SelectedIndex=0;Pump(360);
                     Check(Grid.GetColumn(mark)==0 && ((TranslateTransform)mark.RenderTransform).X==0 && (string)combo.SelectedValue=="dark" && combo.IsVisible,
                         "Rapid tab switches settle on the last tab and keep the unsaved preference");
                     var modelLabel=Children<TextBlock>(viewport).First(t=>t.Text=="Music2Emo 模型目录");

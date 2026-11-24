@@ -1,9 +1,7 @@
-using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
-using System.Windows.Media.Animation;
 
 namespace RevelationHub;
 
@@ -26,36 +24,41 @@ public partial class HubTheme : ResourceDictionary
         Animate(button, e.ButtonState == MouseButtonState.Pressed ? Pressed : button.IsMouseOver ? Hover : 0);
     }
 
+    private void ButtonKey(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Space || e.IsRepeat) return;
+        var button = (Button)sender;
+        Animate(button, e.IsDown ? Pressed : button.IsMouseOver ? Hover : 0);
+    }
+
+    private void ButtonBlur(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        var button = (Button)sender;
+        Animate(button,button.IsMouseOver ? Hover : 0);
+    }
+
     private static void Animate(Button button, double opacity)
     {
         if (button.Template?.FindName("HoverFill", button) is not Border fill) return;
         if (fill.RenderTransform is not ScaleTransform scale)
         {
-            scale = new ScaleTransform(.96, .96);
+            scale = new ScaleTransform(.84, .84);
             fill.RenderTransformOrigin = new Point(.5, .5);
             fill.RenderTransform = scale;
         }
 
         bool motion = Window.GetWindow(button) is MainWindow window && window.AnimateControls;
-        var duration = TimeSpan.FromMilliseconds(opacity == 0 ? 180 : 120);
-        double size = opacity == 0 ? .96 : opacity >= Pressed ? .975 : 1;
-        void Move(Animatable target, DependencyProperty property, double to)
-        {
-            double from = (double)target.GetValue(property);
-            target.SetValue(property, to);
-            target.BeginAnimation(property, motion ? Ease(from, to, duration) : null);
-        }
-
+        bool pressed = opacity >= Pressed;
+        int duration = pressed ? 60 : opacity > 0 ? 90 : 150;
         double previous = fill.Opacity;
         fill.Opacity = opacity;
-        fill.BeginAnimation(UIElement.OpacityProperty, motion ? Ease(previous, opacity, duration) : null);
-        Move(scale, ScaleTransform.ScaleXProperty, size);
-        Move(scale, ScaleTransform.ScaleYProperty, size);
+        fill.BeginAnimation(UIElement.OpacityProperty, motion ? HubMotion.Tween(previous,opacity,duration) : null);
+        HubMotion.Scale(scale, opacity == 0 ? .84 : 1, duration + 60,motion);
+        if (button.Template.FindName("PressFace",button) is FrameworkElement face)
+        {
+            if (face.RenderTransform is not ScaleTransform pressScale)
+                face.RenderTransform = pressScale = new ScaleTransform();
+            HubMotion.Scale(pressScale, motion && pressed ? .955 : 1, pressed ? 80 : 300,motion);
+        }
     }
-
-    private static DoubleAnimation Ease(double from, double to, TimeSpan duration) => new(from, to, duration)
-    {
-        EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
-        FillBehavior = FillBehavior.Stop
-    };
 }

@@ -64,10 +64,12 @@
       </Border>
       </StackPanel>
     </Canvas>
-    <Grid x:Name="FeedbackOverlay" Grid.RowSpan="2" Background="#30242E40" Visibility="Collapsed"
+    <Grid x:Name="FeedbackOverlay" Grid.RowSpan="2" Visibility="Collapsed"
           KeyboardNavigation.TabNavigation="Cycle" PreviewKeyDown="FeedbackKeyDown">
+      <Grid.Background><SolidColorBrush x:Name="DialogScrim" Color="#40242E40"/></Grid.Background>
       <Border x:Name="FeedbackCard" HorizontalAlignment="Center" VerticalAlignment="Center" Width="440" Margin="20" Padding="24,20"
-              Background="{StaticResource Paper}" BorderBrush="{StaticResource Rule}" BorderThickness="1" CornerRadius="8" AutomationProperties.LabeledBy="{Binding ElementName=DialogTitle}">
+              Background="{StaticResource Paper}" BorderBrush="{StaticResource Rule}" BorderThickness="1" CornerRadius="8" RenderTransformOrigin=".5,.5" AutomationProperties.LabeledBy="{Binding ElementName=DialogTitle}">
+        <Border.RenderTransform><TransformGroup><RotateTransform x:Name="DialogTilt"/><TranslateTransform x:Name="DialogShift"/></TransformGroup></Border.RenderTransform>
         <Grid>
           <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
           <TextBlock x:Name="DialogTitle" FontSize="19" FontWeight="SemiBold"/>

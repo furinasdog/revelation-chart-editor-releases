@@ -39,11 +39,20 @@ public partial class MainWindow
         var pages=Navigation.Children.OfType<Button>().ToList();
         string group=(string)pages.Single(b=>Equals(b.Content,dest)).Tag;
         lastPage[group]=dest;
-        foreach (var b in Groups.Children.OfType<Button>()) Selector.SetIsSelected(b,Equals(b.Content,group));
+        bool changedGroup = !Groups.Children.OfType<Button>().Any(b => Equals(b.Content,group) && Selector.GetIsSelected(b));
+        foreach (var b in Groups.Children.OfType<Button>()) SelectNavigation(b,Equals(b.Content,group));
+        int railIndex = 0;
         foreach (var b in pages)
         {
             b.Visibility=Equals(b.Tag,group)?Visibility.Visible:Visibility.Collapsed;
-            Selector.SetIsSelected(b,Equals(b.Content,dest));
+            SelectNavigation(b,Equals(b.Content,dest));
+            if (changedGroup && b.Visibility == Visibility.Visible)
+            {
+                b.ApplyTemplate();
+                if (b.Template.FindName("NavLabel",b) is FrameworkElement label)
+                    label.BeginAnimation(OpacityProperty, AnimateControls ? HubMotion.Tween(0,1,100,railIndex * 26) : null);
+                railIndex++;
+            }
         }
         page=dest;
         onlyInstalled=dest=="已安装";
@@ -68,8 +77,10 @@ public partial class MainWindow
         catch(Exception ex) { Message(ex.Message,true); }
         if (changed)
         {
-            FadePage(OnLibrary ? LibraryBody : ManagerBody);
-            FadePage(PageTitle);
+            RevealSections(OnLibrary ? Cards : Manager);
+            PageTitle.BeginAnimation(OpacityProperty, AnimateControls ? HubMotion.Tween(.45,1,120) : null);
+            if (OnLibrary && Cards.Children.Count == 0)
+                EmptyState.BeginAnimation(OpacityProperty, AnimateControls ? HubMotion.Tween(0,1,100) : null);
         }
     }
     private static Button ActionButton(string name,Action action)
@@ -84,7 +95,7 @@ public partial class MainWindow
     private StackPanel AddSection(Panel parent, string text)
     {
         var body = new StackPanel();
-        parent.Children.Add(new Border{Style=(Style)FindResource("Card"),Child=body});
+        parent.Children.Add(new PageCard((Style)FindResource("Card"),body));
         var label=Label(text,16,"Ink");label.FontWeight=FontWeights.SemiBold;label.Margin=new Thickness(0,0,0,7);body.Children.Add(label);
         return body;
     }
@@ -179,11 +190,9 @@ public partial class MainWindow
             var slide = new TranslateTransform();
             mark.RenderTransform = slide;
             if (previous == selected) return;
-            FadePage((FrameworkElement)current.Content);
+            RevealSections((Panel)current.Content);
             if (!AnimateControls) return;
-            DoubleAnimation Transition(double start, double end) => new(start, end, TimeSpan.FromMilliseconds(220))
-                { EasingFunction=new CubicEase { EasingMode=EasingMode.EaseOut }, FillBehavior=FillBehavior.Stop };
-            slide.BeginAnimation(TranslateTransform.XProperty, Transition(from, 0));
+            slide.BeginAnimation(TranslateTransform.XProperty, HubMotion.Tween(from,0,260,settle:true));
         };
     }
     private StackPanel BuildConfigForm(string file)
