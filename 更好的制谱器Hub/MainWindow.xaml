@@ -11,14 +11,27 @@
           <Button x:Name="LibraryTab" Content="版本库" Click="ShowLibrary" HorizontalContentAlignment="Left" Margin="0,0,0,6"/>
           <Button x:Name="InstalledTab" Content="已安装" Click="ShowInstalled" HorizontalContentAlignment="Left"/>
         </StackPanel>
-        <Button DockPanel.Dock="Bottom" VerticalAlignment="Bottom" Content="打开安装目录" Click="OpenFolder" ToolTip="在资源管理器中打开各版本的安装位置"/>
+        <StackPanel VerticalAlignment="Bottom">
+          <TextBlock x:Name="HubVersionLabel" Foreground="{StaticResource Muted}" FontSize="12" Margin="3,0,0,8"/>
+          <Button Content="问题反馈" Click="FeedbackClick" Margin="0,0,0,6" ToolTip="在浏览器中打开 GitHub Issues"/>
+          <Button Content="打开安装目录" Click="OpenFolder" ToolTip="在资源管理器中打开各版本的安装位置"/>
+        </StackPanel>
       </DockPanel>
     </Border>
     <Grid Grid.Column="1" Margin="32,30">
       <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
       <DockPanel Margin="0,0,0,14"><Button x:Name="RefreshButton" DockPanel.Dock="Right" Content="刷新版本" Click="RefreshClick" VerticalAlignment="Center"/><TextBlock x:Name="PageTitle" Text="版本库" FontSize="32" FontWeight="SemiBold"/></DockPanel>
       <TextBlock Grid.Row="1" x:Name="CatalogStatus" Foreground="{StaticResource Muted}" Margin="0,0,0,20" AutomationProperties.LiveSetting="Polite"/>
-      <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel x:Name="Cards"/></ScrollViewer>
+      <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel>
+        <DockPanel x:Name="UpdatePanel" Visibility="Collapsed" Margin="0,0,6,16">
+          <Button x:Name="ApplyButton" DockPanel.Dock="Right" Content="重启并更新" Click="ApplyClick" Visibility="Collapsed"/>
+          <TextBlock x:Name="UpdateStatus" VerticalAlignment="Center" AutomationProperties.LiveSetting="Polite"/>
+        </DockPanel>
+        <Border x:Name="NoticePanel" Visibility="Collapsed" BorderBrush="{StaticResource Gold}" BorderThickness="2,0,0,0" Padding="12,2" Margin="0,0,6,18">
+          <StackPanel x:Name="Notices"/>
+        </Border>
+        <StackPanel x:Name="Cards"/>
+      </StackPanel></ScrollViewer>
       <TextBlock Grid.Row="3" x:Name="EmptyState" Foreground="{StaticResource Muted}" Margin="0,12,0,0"/>
     </Grid>
   </Grid>

@@ -44,7 +44,7 @@ namespace RevelationHub
         public string Versions => Path.Combine(Root, "versions");
         public string CatalogSource { get; private set; }
         public class Envelope { public string payload { get; set; } public string signature { get; set; } }
-        public class Index { public int schema { get; set; } public Release[] releases { get; set; } }
+        public class Index { public int schema { get; set; } public string product { get; set; } public Release[] releases { get; set; } }
 
         public Distribution(string root, HttpClient http)
         {
@@ -58,7 +58,7 @@ namespace RevelationHub
             using (var reader = new StreamReader(stream ?? throw new InvalidDataException("缺少内置发行信息。")))
                 return reader.ReadToEnd();
         }
-        internal static Release[] ReadCatalog(string signed)
+        internal static Release[] ReadCatalog(string signed, string product = "editor")
         {
             var envelope = JsonSerializer.Deserialize<Envelope>(signed);
             if (envelope?.payload == null || envelope.signature == null) throw new InvalidDataException("版本目录缺少签名。");
@@ -70,7 +70,7 @@ namespace RevelationHub
                     throw new InvalidDataException("版本目录签名无效。");
             }
             var doc = JsonSerializer.Deserialize<Index>(bytes);
-            if (doc == null || doc.schema != 1 || doc.releases == null || doc.releases.Length > 1000) throw new InvalidDataException("版本目录格式有误。");
+            if (doc == null || doc.schema != 1 || (doc.product ?? "editor") != product || doc.releases == null || doc.releases.Length > 1000) throw new InvalidDataException("版本目录格式有误。");
             var seen = new HashSet<string>();
             foreach (var r in doc.releases)
                 if (r == null || !ValidVersion(r.version) || !seen.Add(r.version) || r.size <= 0 || r.size > MaxPackage ||

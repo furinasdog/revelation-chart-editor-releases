@@ -2,15 +2,18 @@ param(
     [Parameter(Mandatory)][string]$Archive,
     [Parameter(Mandatory)][version]$Version,
     [Parameter(Mandatory)][string]$KeyFile,
-    [Parameter(Mandatory)][string]$Notes
+    [Parameter(Mandatory)][string]$Notes,
+    [ValidateSet('editor','hub')][string]$Product='editor'
 )
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Security
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 $publicPath = Join-Path $PSScriptRoot 'publisher.xml'
-$catalogPath = Join-Path $PSScriptRoot 'catalog.signed.json'
+$isHub = $Product -eq 'hub'
+$catalogPath = Join-Path $PSScriptRoot $(if ($isHub) { 'hub-update.signed.json' } else { 'catalog.signed.json' })
 $source = Get-Item -LiteralPath $Archive
-if ($source.Name -cne "Revelation-Editor-v$Version-Windows-x64.zip") { throw 'Unexpected asset name' }
+$expected = if ($isHub) { "Revelation-Hub-v$Version-x64.msi" } else { "Revelation-Editor-v$Version-Windows-x64.zip" }
+if ($source.Name -cne $expected) { throw 'Unexpected asset name' }
 $crypto = New-Object Security.Cryptography.RSACryptoServiceProvider(3072)
 $crypto.PersistKeyInCsp = $false
 try {
@@ -35,7 +38,7 @@ try {
         $records = @(($utf8.GetString($bytes) | ConvertFrom-Json).releases | Where-Object { $_.version -ne $Version.ToString() })
     }
     $record = [ordered]@{version=$Version.ToString(); size=$source.Length; sha256=(Get-FileHash -LiteralPath $source.FullName).Hash.ToLowerInvariant(); notes=$Notes; date=[DateTime]::UtcNow.ToString('yyyy-MM-dd')}
-    $payload = $utf8.GetBytes((ConvertTo-Json -InputObject @{schema=1;releases=@($record)+$records} -Depth 5 -Compress))
+    $payload = $utf8.GetBytes((ConvertTo-Json -InputObject @{schema=1;product=$Product;releases=@($record)+$records} -Depth 5 -Compress))
     $sig = $crypto.SignData($payload,'SHA256')
     [IO.File]::WriteAllText($publicPath,$public,$utf8)
     [IO.File]::WriteAllText($catalogPath,(ConvertTo-Json -InputObject @{payload=[Convert]::ToBase64String($payload); signature=[Convert]::ToBase64String($sig)} -Compress),$utf8)

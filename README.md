@@ -1,8 +1,12 @@
 # 更好的制谱器 Hub
 
-Windows x64 版本管理器。下载并安装 Hub 后，可在「版本库」选择制谱器版本、查看下载进度和启动已安装的编辑器。[下载 Hub 安装器](https://github.com/furinasdog/revelation-chart-editor-releases/releases/download/hub-v1.1.1/Revelation-Hub-v1.1.1-x64.msi) · [所有版本](https://github.com/furinasdog/revelation-chart-editor-releases/releases)
+Windows x64 版本管理器。下载并安装 Hub 后，可在「版本库」选择制谱器版本、查看下载进度和启动已安装的编辑器。[下载 Hub 安装器](https://github.com/furinasdog/revelation-chart-editor-releases/releases/download/hub-v1.1.2/Revelation-Hub-v1.1.2-x64.msi) · [所有版本](https://github.com/furinasdog/revelation-chart-editor-releases/releases)
 
 Hub 使用 C#、WPF 和 .NET 10 LTS。安装器自带运行时。它优先从 GitHub 获取发行包，连接失败时尝试镜像，以发行签名和 SHA-256 校验内容。各编辑器版本独立安装，可离线启动。[Hub 源码及构建说明](更好的制谱器Hub/README.md)
+
+## Hub v1.1.2
+
+首次升级至 v1.1.2 请运行上方安装器。后续版本由 Hub 自动下载并在退出时安装。安装完成后可分别勾选开始菜单和桌面快捷方式。版本库会显示发行公告，侧栏「问题反馈」可直接打开 GitHub Issues。
 
 ## 编辑器 v1.1.1
 

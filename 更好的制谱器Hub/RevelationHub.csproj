@@ -7,7 +7,7 @@
     <AssemblyName>RevelationHub</AssemblyName>
     <RootNamespace>RevelationHub</RootNamespace>
     <ApplicationIcon>assets/Revelation.ico</ApplicationIcon>
-    <Version>1.1.1</Version>
+    <Version>1.1.2</Version>
     <AssemblyTitle>更好的制谱器Hub</AssemblyTitle>
     <Product>更好的制谱器Hub</Product>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
@@ -17,6 +17,7 @@
     <DebugType>none</DebugType>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="LibrarySmoke" />
     <Compile Remove="tests/**/*.cs"/>
     <None Remove="tests/**"/>
     <Resource Include="assets/Revelation.ico" />

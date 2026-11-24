@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 
 namespace RevelationHub
 {
@@ -17,6 +18,10 @@ namespace RevelationHub
     {
         private readonly HttpClient http = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
         private readonly Distribution library;
+        private readonly HubServices services;
+        private readonly DispatcherTimer serviceTimer = new() { Interval = TimeSpan.FromHours(6) };
+        private bool checkingServices, reopenAfterUpdate;
+        private string readyVersion;
         private readonly CancellationTokenSource lifetime = new CancellationTokenSource();
         private readonly Dictionary<string, Transfer> transfers = new Dictionary<string, Transfer>();
         private Release[] available = Array.Empty<Release>();
@@ -28,22 +33,33 @@ namespace RevelationHub
         public MainWindow()
         {
             InitializeComponent();
-            http.DefaultRequestHeaders.UserAgent.ParseAdd("RevelationHub/1.1");
-            var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RevelationHub");
+            http.DefaultRequestHeaders.UserAgent.ParseAdd("RevelationHub/" + HubServices.Current.ToString(3));
+            var root = HubServices.UserRoot;
             library = new Distribution(root, http);
+            services = new HubServices(root, http);
+            HubVersionLabel.Text = "Hub v" + HubServices.Current.ToString(3);
+            serviceTimer.Tick += async (_, __) => await CheckServices(false);
             Loaded += async (_, __) => {
+                serviceTimer.Start();
+                _ = CheckServices(false);
                 try { available = library.Offline(); CatalogStatus.Text = library.CatalogSource; Render(); await Refresh(); }
                 catch (Exception ex) { CatalogStatus.Text = ex.Message; }
             };
             Closing += OnClosing;
-            Closed += (_, __) => { lifetime.Cancel(); http.Dispose(); };
+            Closed += (_, __) => { serviceTimer.Stop(); lifetime.Cancel(); http.Dispose(); };
         }
         private void OnClosing(object sender, CancelEventArgs e)
         {
-            if (download == null) return;
-            e.Cancel = true;
-            closing = true;
-            download.Cancel();
+            if (download != null)
+            {
+                e.Cancel = true;
+                closing = true;
+                download.Cancel();
+                return;
+            }
+            if (readyVersion == null) return;
+            try { services.StartUpdater(readyVersion, reopenAfterUpdate); readyVersion = null; }
+            catch (Exception ex) { if (reopenAfterUpdate) e.Cancel = true; UpdateStatus.Text = "更新未能启动 · " + ex.Message; }
         }
         private async Task Refresh()
         {
@@ -59,9 +75,70 @@ namespace RevelationHub
             catch (Exception ex) { CatalogStatus.Text = ex.Message; }
             finally { RefreshButton.IsEnabled = true; }
         }
-        private async void RefreshClick(object sender, RoutedEventArgs e) => await Refresh();
-        private void ShowLibrary(object sender, RoutedEventArgs e) { onlyInstalled = false; Render(); }
-        private void ShowInstalled(object sender, RoutedEventArgs e) { onlyInstalled = true; Render(); }
+        private async void RefreshClick(object sender, RoutedEventArgs e) => await Task.WhenAll(Refresh(), CheckServices(true));
+        private void ShowLibrary(object sender, RoutedEventArgs e) { onlyInstalled = false; Render(); ShowNotices(); }
+        private void ShowInstalled(object sender, RoutedEventArgs e) { onlyInstalled = true; Render(); ShowNotices(); }
+        private void ShowNotices() => NoticePanel.Visibility = !onlyInstalled && Notices.Children.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        private void FeedbackClick(object sender, RoutedEventArgs e)
+        {
+            try { Process.Start(new ProcessStartInfo(HubServices.IssuesUrl) { UseShellExecute = true }); }
+            catch (Exception ex) { CatalogStatus.Text = "无法打开问题反馈 · " + ex.Message; }
+        }
+        private void ApplyClick(object sender, RoutedEventArgs e) { if (download == null && readyVersion != null) { reopenAfterUpdate = true; Close(); } }
+        private async Task CheckServices(bool manual)
+        {
+            if (checkingServices) return;
+            checkingServices = true;
+            try { await Task.WhenAll(ReadNotices(), CheckUpdate(manual)); }
+            finally { checkingServices = false; }
+        }
+        private async Task ReadNotices()
+        {
+            try
+            {
+                var items = await services.Notices(lifetime.Token);
+                Notices.Children.Clear();
+                foreach (var item in items)
+                {
+                    var title = Label(item.title, 14, "#F3C654");
+                    title.FontWeight = FontWeights.SemiBold;
+                    Notices.Children.Add(title);
+                    var content = Label(item.body, 13, "#CDD4DC");
+                    content.Margin = new Thickness(0, 3, 0, 6);
+                    Notices.Children.Add(content);
+                }
+                ShowNotices();
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception) { /* Keep the last displayed notice while offline. */ }
+        }
+        private async Task CheckUpdate(bool manual)
+        {
+            if (readyVersion != null) return;
+            try
+            {
+                services.CleanApplied();
+                var progress = new Progress<Transfer>(t =>
+                {
+                    if (readyVersion != null || lifetime.IsCancellationRequested) return;
+                    UpdatePanel.Visibility = Visibility.Visible;
+                    UpdateStatus.Text = "Hub 更新 · " + t.Stage + (t.Total > 0 ? $"  {100.0 * t.Bytes / t.Total:F0}%" : "");
+                });
+                readyVersion = await services.Prepare(HubServices.Current, progress, lifetime.Token);
+                if (readyVersion != null)
+                {
+                    UpdateStatus.Text = $"Hub v{readyVersion} 已就绪，退出时自动安装";
+                    UpdatePanel.Visibility = ApplyButton.Visibility = Visibility.Visible;
+                    ApplyButton.IsEnabled = download == null;
+                }
+                else { UpdateStatus.Text = "Hub 已是最新版本"; UpdatePanel.Visibility = manual ? Visibility.Visible : Visibility.Collapsed; }
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                if (manual || UpdatePanel.IsVisible) { UpdatePanel.Visibility = Visibility.Visible; UpdateStatus.Text = "暂时无法更新 Hub · " + ex.Message; }
+            }
+        }
         private void OpenFolder(object sender, RoutedEventArgs e)
         {
             try { Process.Start(new ProcessStartInfo(library.Versions) { UseShellExecute = true }); }
@@ -135,6 +212,7 @@ namespace RevelationHub
         {
             if (download != null) return;
             download = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+            ApplyButton.IsEnabled = false;
             activeVersion = r.version;
             transfers[r.version] = new Transfer("准备下载");
             Render();
@@ -148,7 +226,7 @@ namespace RevelationHub
             catch (OperationCanceledException) { transfers[r.version]=new Transfer("已取消下载"); }
             catch (Exception ex) { transfers[r.version]=new Transfer("安装失败 · "+ex.Message); }
             finally {
-                download.Dispose(); download=null; activeVersion=null;
+                download.Dispose(); download=null; activeVersion=null; ApplyButton.IsEnabled=true;
                 if (closing) Close(); else Render();
             }
         }

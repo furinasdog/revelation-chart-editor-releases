@@ -1,10 +1,11 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
-  <Package Name="更好的制谱器 Hub" Manufacturer="Revelation Hub" Version="1.1.1" UpgradeCode="D7B58CEC-A20B-4241-AB97-718966748E29" Language="2052" Codepage="936" Scope="perUser" InstallerVersion="500">
+  <Package Name="更好的制谱器 Hub" Manufacturer="Revelation Hub" Version="1.1.2" UpgradeCode="D7B58CEC-A20B-4241-AB97-718966748E29" Language="2052" Codepage="936" Scope="perUser" InstallerVersion="500">
     <MajorUpgrade DowngradeErrorMessage="已安装更高版本的制谱器 Hub。" />
     <MediaTemplate EmbedCab="yes" CompressionLevel="medium" />
     <Icon Id="RevelationHub.ico" SourceFile="$(sys.SOURCEFILEDIR)assets\Revelation.ico"/>
     <Property Id="ARPPRODUCTICON" Value="RevelationHub.ico"/>
     <StandardDirectory Id="ProgramMenuFolder"/>
+    <StandardDirectory Id="DesktopFolder"/>
     <StandardDirectory Id="LocalAppDataFolder">
       <Directory Id="ProgramsDirectory" Name="Programs">
         <Directory Id="INSTALLFOLDER" Name="RevelationHub">
@@ -14,13 +15,40 @@
             <File Id="RuntimeLicense" Source="$(sys.SOURCEFILEDIR)licenses\dotnet-LICENSE.txt"/>
             <File Id="WpfLicense" Source="$(sys.SOURCEFILEDIR)licenses\windowsdesktop-LICENSE.txt"/>
             <File Id="RuntimeNotices" Source="$(sys.SOURCEFILEDIR)licenses\dotnet-THIRD-PARTY-NOTICES.txt"/>
-            <Shortcut Id="StartMenu" Directory="ProgramMenuFolder" Name="更好的制谱器 Hub" Target="[#HubExe]" WorkingDirectory="INSTALLFOLDER" Icon="RevelationHub.ico" IconIndex="0"/>
+            <RemoveFile Id="RemoveStartMenu" Directory="ProgramMenuFolder" Name="更好的制谱器 Hub.lnk" On="uninstall"/>
+            <RemoveFile Id="RemoveDesktop" Directory="DesktopFolder" Name="更好的制谱器 Hub.lnk" On="uninstall"/>
             <RemoveFolder Id="RemoveHubFolder" Directory="INSTALLFOLDER" On="uninstall"/>
             <RegistryValue Root="HKCU" Key="Software\RevelationHub" Name="Installed" Type="integer" Value="1" KeyPath="yes"/>
+            <RegistryValue Root="HKCU" Key="Software\RevelationHub" Name="InstallDir" Type="string" Value="[INSTALLFOLDER]"/>
           </Component>
         </Directory>
       </Directory>
     </StandardDirectory>
     <Feature Id="Main" Title="更好的制谱器 Hub"><ComponentRef Id="HubApp"/></Feature>
+    <Property Id="HUBSTART" Value="1"/>
+    <Property Id="DefaultUIFont" Value="HubFont"/>
+    <CustomAction Id="SetShortcuts" FileRef="HubExe" ExeCommand="--set-shortcuts &quot;start=[HUBSTART]&quot; &quot;desktop=[HUBDESKTOP]&quot;" Return="check"/>
+    <CustomAction Id="RestoreShortcuts" FileRef="HubExe" ExeCommand="--restore-shortcuts" Return="check"/>
+    <UI>
+      <TextStyle Id="HubFont" FaceName="Microsoft YaHei UI" Size="9"/>
+      <TextStyle Id="HubTitle" FaceName="Microsoft YaHei UI" Size="13" Bold="yes"/>
+      <Dialog Id="HubFinished" Width="300" Height="155" Title="[ProductName]" NoMinimize="yes">
+        <Control Id="Title" Type="Text" X="14" Y="12" Width="268" Height="20" Text="{\HubTitle}安装完成"/>
+        <Control Id="Prompt" Type="Text" X="14" Y="38" Width="268" Height="15" Text="选择添加快捷方式的位置"/>
+        <Control Id="Start" Type="CheckBox" X="14" Y="59" Width="268" Height="15" Property="HUBSTART" CheckBoxValue="1" Text="添加到开始菜单"/>
+        <Control Id="Desktop" Type="CheckBox" X="14" Y="81" Width="268" Height="15" Property="HUBDESKTOP" CheckBoxValue="1" Text="添加到桌面"/>
+        <Control Id="Line" Type="Line" X="0" Y="117" Width="300" Height="1"/>
+        <Control Id="Finish" Type="PushButton" X="228" Y="127" Width="58" Height="18" Default="yes" Cancel="yes" Text="完成">
+          <Publish Event="DoAction" Value="SetShortcuts" Order="1"/>
+          <Publish Event="EndDialog" Value="Return" Order="2"/>
+        </Control>
+      </Dialog>
+    </UI>
+    <InstallUISequence>
+      <Show Dialog="HubFinished" OnExit="success" Condition="NOT Installed AND NOT REMOVE~=&quot;ALL&quot; AND UILevel = 5"/>
+    </InstallUISequence>
+    <InstallExecuteSequence>
+      <Custom Action="RestoreShortcuts" After="InstallFinalize" Condition="NOT REMOVE~=&quot;ALL&quot; AND UILevel &lt; 5"/>
+    </InstallExecuteSequence>
   </Package>
 </Wix>

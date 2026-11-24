@@ -81,6 +81,11 @@ internal class Program
     }
     static async Task Main(string[] args)
     {
+        if (args is ["--hub", var msi, var manifest, var editorCatalog])
+        {
+            await CheckHubServices(msi, manifest, editorCatalog);
+            return;
+        }
         var work = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "revelation-hub-" + Guid.NewGuid().ToString("N"))).FullName;
         var routes = new Routes {Archive=args[0],Catalog=args[1],RejectPrimary=true,SupportRanges=true};
         using var http = new HttpClient(routes);
@@ -119,5 +124,44 @@ internal class Program
                 Check(releaseLibrary.Installed("1.1.0"),"Live release download and install; mirror="+progress.Mirror);
             }
         } finally { Directory.Delete(work,true); }
+    }
+
+    static async Task CheckHubServices(string msi, string manifest, string editorCatalog)
+    {
+        var work = Directory.CreateTempSubdirectory("revelation-hub-services-");
+        try
+        {
+            var routes = new Routes { Archive=msi, Catalog=manifest, RejectPrimary=true };
+            using var http = new HttpClient(routes);
+            var services = new HubServices(work.FullName, http);
+            string signed = File.ReadAllText(manifest);
+            var newest = Distribution.ReadCatalog(signed, "hub")[0];
+            var progress = new Observer();
+            var ct = CancellationToken.None;
+            string version = await services.Prepare(new Version(1,1,1), progress, ct);
+            string staged = Path.Combine(work.FullName, "updates", Path.GetFileName(msi));
+            Check(version == newest.version && File.Exists(staged) && progress.Bytes && progress.Mirror, "Signed MSI staged through the mirror with progress");
+            Check(await services.Prepare(Version.Parse(version), progress, ct) == null, "Current Hub skips installation");
+            try { Distribution.ReadCatalog(File.ReadAllText(editorCatalog), "hub"); throw new Exception("Accepted editor catalog for self update"); }
+            catch (InvalidDataException) { Check(true, "Editor catalog rejected for self update"); }
+            using (var file = File.OpenWrite(staged)) { file.Position = 64; file.WriteByte(0x2a); file.SetLength(file.Length - 1); }
+            Check(await HubServices.InstallVerified(staged, version) == 3, "Damaged MSI rejected before Windows Installer");
+            Check(await services.Prepare(new Version(1,1,1), progress, ct) == version && new FileInfo(staged).Length == newest.size, "Damaged staging recovered");
+            string notices = Path.Combine(work.FullName, "orig-notices.json");
+            routes.Catalog = notices;
+            File.WriteAllText(notices, """{"schema":1,"items":[{"title":"更新","body":"编辑器已发布"}]}""");
+            Check((await services.Notices(ct)).Single().body == "编辑器已发布", "Raw announcement decoded");
+            File.WriteAllText(notices, "{}");
+            Check((await services.Notices(ct)).Single().title == "更新", "Invalid response keeps cached notice");
+            File.WriteAllText(notices, """{"schema":1,"items":[]}""");
+            Check((await services.Notices(ct)).Length == 0, "An empty feed clears notices");
+            string exe = Path.Combine(work.FullName, "RevelationHub.exe");
+            string link = Path.Combine(work.FullName, "更好的制谱器 Hub.lnk");
+            Shortcuts.WriteLink(work.FullName, exe, true);
+            Check(File.Exists(link), "Windows shortcut created");
+            Shortcuts.WriteLink(work.FullName, exe, false);
+            Check(!File.Exists(link), "Matching Windows shortcut removed");
+        }
+        finally { work.Delete(true); }
     }
 }
