@@ -16,7 +16,7 @@ namespace RevelationHub
 {
     public partial class MainWindow : Window
     {
-        private readonly HttpClient http = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
+        private readonly HttpClient http;
         private readonly Distribution library;
         private readonly HubServices services;
         private readonly DispatcherTimer serviceTimer = new() { Interval = TimeSpan.FromHours(6) };
@@ -30,21 +30,28 @@ namespace RevelationHub
         private bool onlyInstalled, closing;
         private static SolidColorBrush ColorOf(string hex) => new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex));
 
-        public MainWindow()
+        public MainWindow() : this(new HttpClient {Timeout=Timeout.InfiniteTimeSpan},HubServices.UserRoot,new EditorProfile(EditorProfile.DefaultRoot)) { }
+
+        internal MainWindow(HttpClient connection,string root,EditorProfile editorProfile)
         {
+            http=connection;
+            profile=editorProfile;
             InitializeComponent();
             http.DefaultRequestHeaders.UserAgent.ParseAdd("RevelationHub/" + HubServices.Current.ToString(3));
-            var root = HubServices.UserRoot;
             library = new Distribution(root, http);
             services = new HubServices(root, http);
             options = HubOptions.Load(root);
             models = new EditorModels(profile,http);
             HubVersionLabel.Text = "Hub v" + HubServices.Current.ToString(3);
+            StateChanged += (_,__) => {
+                MaximizeButton.Content = WindowState==WindowState.Maximized ? "\uE923" : "\uE922";
+                WindowFrame.Padding=WindowState==WindowState.Maximized ? SystemParameters.WindowResizeBorderThickness : new Thickness(0);
+            };
             serviceTimer.Tick += async (_, __) => await CheckServices(false);
             Loaded += async (_, __) => {
                 serviceTimer.Start();
                 _ = CheckServices(false);
-                try { available = library.Offline(); CatalogStatus.Text = library.CatalogSource; Render(); await Refresh(); }
+                try { available = library.Offline(); CatalogStatus.Text = library.CatalogSource; Navigate(library.LocalVersions().Any()?"已安装":"版本库"); await Refresh(); }
                 catch (Exception ex) { CatalogStatus.Text = ex.Message; }
             };
             Closing += OnClosing;
@@ -77,14 +84,12 @@ namespace RevelationHub
             catch (Exception ex) { CatalogStatus.Text = ex.Message; }
             finally { RefreshButton.IsEnabled = true; }
         }
-        private async void RefreshClick(object sender, RoutedEventArgs e) { if (OnLibrary) await Task.WhenAll(Refresh(), CheckServices(true)); else Navigate(page); }
-        private void ShowLibrary(object sender, RoutedEventArgs e) => Navigate("版本库");
-        private void ShowInstalled(object sender, RoutedEventArgs e) => Navigate("已安装");
+        private async void RefreshClick(object sender, RoutedEventArgs e) { if (OnLibrary) await Task.WhenAll(Refresh(), CheckServices(true)); else Navigate(page,true); }
         private void ShowNotices() => NoticePanel.Visibility = options.Announcements && !onlyInstalled && Notices.Children.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         private void FeedbackClick(object sender, RoutedEventArgs e)
         {
             try { Process.Start(new ProcessStartInfo(HubServices.IssuesUrl) { UseShellExecute = true }); }
-            catch (Exception ex) { CatalogStatus.Text = "无法打开问题反馈 · " + ex.Message; }
+            catch (Exception ex) { Message("无法打开问题反馈 · " + ex.Message); }
         }
         private void ApplyClick(object sender, RoutedEventArgs e) { if (download == null && readyVersion != null) { reopenAfterUpdate = true; Close(); } }
         private async Task CheckServices(bool manual)
@@ -102,10 +107,10 @@ namespace RevelationHub
                 Notices.Children.Clear();
                 foreach (var item in items)
                 {
-                    var title = Label(item.title, 14, "#F3C654");
+                    var title = Label(item.title, 14, "#245675");
                     title.FontWeight = FontWeights.SemiBold;
                     Notices.Children.Add(title);
-                    var content = Label(item.body, 13, "#CDD4DC");
+                    var content = Label(item.body, 13, "#485C6E");
                     content.Margin = new Thickness(0, 3, 0, 6);
                     Notices.Children.Add(content);
                 }
@@ -144,44 +149,56 @@ namespace RevelationHub
         private void OpenFolder(object sender, RoutedEventArgs e)
         {
             try { Process.Start(new ProcessStartInfo(library.Versions) { UseShellExecute = true }); }
-            catch (Exception ex) { CatalogStatus.Text = ex.Message; }
+            catch (Exception ex) { Message(ex.Message); }
         }
+        private sealed record CardView(string Notes,string Date,long Size,string Hash,bool Present,bool Installed,string Update,bool Busy,bool Active);
+        private readonly Dictionary<string,(CardView View,Border Card)> displayed = new();
         private void Render()
         {
             if (!OnLibrary) return;
-            LibraryTab.Background = ColorOf(onlyInstalled ? "#191D22" : "#353A42");
-            InstalledTab.Background = ColorOf(onlyInstalled ? "#353A42" : "#191D22");
-            PageTitle.Text = onlyInstalled ? "已安装" : "版本库";
+            var local=library.LocalVersions().ToHashSet();
             var releases = available.ToList();
-            foreach (string v in library.LocalVersions())
+            foreach (string v in local)
                 if (releases.All(r => r.version != v)) releases.Add(new Release {version=v});
-            Cards.Children.Clear();
-            foreach (var r in releases.OrderByDescending(item => Version.Parse(item.version)))
-                if (!onlyInstalled || library.LocalVersions().Contains(r.version)) AddCard(r);
+            var rows=releases.Where(r=>!onlyInstalled || local.Contains(r.version)).OrderByDescending(r=>Version.Parse(r.version)).ToArray();
+            var keys=rows.Select(r=>r.version).ToHashSet();
+            foreach(string key in displayed.Keys.Where(k=>!keys.Contains(k)).ToArray()) {Cards.Children.Remove(displayed[key].Card);displayed.Remove(key);}
+            for(int i=0;i<rows.Length;i++)
+            {
+                var r=rows[i];bool present=local.Contains(r.version);
+                var upgrade=present?available.FirstOrDefault(x=>Version.Parse(x.version)>Version.Parse(r.version) && !local.Contains(x.version)):null;
+                var view=new CardView(r.notes,r.date,r.size,r.sha256,present,present && library.Installed(r.version),upgrade?.version,activeVersion!=null && !present,activeVersion==r.version);
+                bool exists=displayed.TryGetValue(r.version,out var prior);
+                if(!exists || prior.View!=view)
+                {
+                    if(exists) Cards.Children.Remove(prior.Card);
+                    var card=BuildCard(r,view,upgrade);
+                    displayed[r.version]=(view,card);Cards.Children.Insert(i,card);
+                }
+                else if(Cards.Children.IndexOf(prior.Card)!=i) {Cards.Children.Remove(prior.Card);Cards.Children.Insert(i,prior.Card);}
+            }
             EmptyState.Text = Cards.Children.Count > 0 ? "" : onlyInstalled ? "还没有安装制谱器。可在版本库选择版本安装。" : "当前没有可用版本。";
         }
         private static TextBlock Label(string text, double size, string color) =>
             new TextBlock { Text = text, FontSize = size, TextWrapping = TextWrapping.Wrap, Foreground = ColorOf(color), VerticalAlignment = VerticalAlignment.Center };
-        private void AddCard(Release r)
+        private Border BuildCard(Release r,CardView view,Release upgrade)
         {
-            bool installed = library.Installed(r.version);
-            bool damaged = !installed && library.LocalVersions().Contains(r.version);
+            bool installed = view.Installed;
+            bool damaged = !installed && view.Present;
             var panel = new StackPanel();
-            var card = new Border { Background = ColorOf("#24282E"), BorderBrush = ColorOf("#41464C"),
-                BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(6), Margin = new Thickness(0,0,6,14),
-                Padding = new Thickness(20,17,20,15), Child = panel };
+            var card = new Border { Style=(Style)FindResource("Card"), Child=panel };
             var header = new DockPanel();
-            var version = Label("v" + r.version, 23, "#F3F4F5");
+            var version = Label("v" + r.version, 20, "#273344");
             version.FontWeight = FontWeights.SemiBold;
-            var state = Label(damaged ? "需要修复" : installed ? "已安装" : "可安装", 13, installed ? "#96D1A5" : "#F3C654");
+            var state = Label(damaged ? "需要修复" : installed ? "已安装" : "可安装", 13, damaged?"#873E27":installed ? "#27634F" : "#415F7A");
             DockPanel.SetDock(state, Dock.Right); header.Children.Add(state); header.Children.Add(version);
             panel.Children.Add(header);
-            var detail = Label($"Windows  x64   ·   {r.date}" + (r.size > 0 ? $"   ·   {r.size / 1048576.0:F1} MiB" : ""), 12, "#B0BAC5");
+            var detail = Label($"Windows  x64   ·   {r.date}" + (r.size > 0 ? $"   ·   {r.size / 1048576.0:F1} MiB" : ""), 12, "#526477");
             detail.Margin = new Thickness(0,4,0,10); panel.Children.Add(detail);
-            if (!String.IsNullOrWhiteSpace(r.notes)) panel.Children.Add(Label(r.notes,14,"#DADEE3"));
-            var progress = new ProgressBar { Height=6, Maximum=100, Foreground=ColorOf("#F3C654"), Background=ColorOf("#434950"), BorderThickness=new Thickness(0) };
-            var status = Label("",12,"#CBD4DD");
-            var action = new Button { Content=installed ? "启动" : "安装", MinWidth=86, Background=ColorOf("#F3C654"), Foreground=ColorOf("#191915") };
+            if (!String.IsNullOrWhiteSpace(r.notes)) panel.Children.Add(Label(r.notes,14,"#394B5A"));
+            var progress = new ProgressBar { Height=5, Maximum=100, Foreground=ColorOf("#295F88"), Background=ColorOf("#DEE5EA"), BorderThickness=new Thickness(0) };
+            var status = Label("",12,"#526477");
+            var action = new Button { Content=installed ? "启动" : "安装", MinWidth=86, Background=ColorOf("#285C80"), Foreground=ColorOf("#FFFFFF") };
             if (damaged) action.Visibility=Visibility.Collapsed;
             var bottom = new DockPanel { Margin=new Thickness(0,14,0,0) };
             DockPanel.SetDock(action,Dock.Right); bottom.Children.Add(action); bottom.Children.Add(status);
@@ -194,9 +211,9 @@ namespace RevelationHub
             {
                 action.Content="取消"; action.Background=ColorOf("#444A51"); action.Foreground=ColorOf("#FFFFFF");
             }
-            else if (!installed && download != null) action.IsEnabled=false;
+            else if (view.Busy) action.IsEnabled=false;
             panel.Children.Add(bottom);
-            if (library.LocalVersions().Contains(r.version)) AddMaintenanceButtons(panel,r);
+            if (view.Present) AddMaintenanceButtons(panel,r,upgrade);
             progress.Margin = new Thickness(0,10,0,0);
             panel.Children.Add(progress);
             card.Tag = new Action<Transfer>(t => {
@@ -212,7 +229,7 @@ namespace RevelationHub
             card.Name = "V" + r.version.Replace('.','_');
             transfers.TryGetValue(r.version,out Transfer prior);
             ((Action<Transfer>)card.Tag)(prior);
-            Cards.Children.Add(card);
+            return card;
         }
         private async Task Install(Release r)
         {

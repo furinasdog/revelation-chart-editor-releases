@@ -81,6 +81,7 @@ internal partial class Program
     }
     static async Task Main(string[] args)
     {
+        if (args is ["--layout", var output]) { await CheckLayout(output);return; }
         if (args is ["--management",var oldZip,var nextZip,var delta,var signedCatalog]) { await CheckManagement(oldZip,nextZip,delta,signedCatalog);return; }
         if (args is ["--hub", var msi, var manifest, var editorCatalog])
         {

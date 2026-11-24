@@ -4,13 +4,13 @@ Windows x64 版本管理器，使用 C#、WPF 和 .NET 10 LTS。MSI 按用户安
 
 ## 安装与下载
 
-从 [GitHub Releases](https://github.com/furinasdog/revelation-chart-editor-releases/releases) 下载 `Revelation-Hub-v1.2.0-x64.msi`。打开 Hub，选版本并点击「安装」。进度条显示来源、百分比和字节数；校验和解压完成后按钮变为「启动」。取消下载会清理本次临时文件。卸载 Hub 会保留已安装的编辑器和用户谱面。
+从 [GitHub Releases](https://github.com/furinasdog/revelation-chart-editor-releases/releases) 下载 `Revelation-Hub-v1.2.1-x64.msi`。打开 Hub，选版本并点击「安装」。进度条显示来源、百分比和字节数；校验和解压完成后按钮变为「启动」。取消下载会清理本次临时文件。卸载 Hub 会保留已安装的编辑器和用户谱面。
 
 Hub 优先从 GitHub 读取版本目录和发行附件。目录不可达时尝试 CDN 和代理，再使用签名缓存；安装包采用并行分段下载。传输中断时会在同一次安装中从已收到的位置继续，必要时切换镜像。每个版本的大小和 SHA-256 都来自用发行公钥验证的目录。通过校验后才解压到独立版本目录。
 
 ## Hub 更新与公告
 
-Hub 启动时、每隔 6 小时以及点击「刷新版本」时检查更新。发现新版后会自动下载并校验，点击「重启并更新」可立即安装，也可在本次退出时安装。静默升级沿用已选的快捷方式。v1.1.2 可自动升级到 v1.2.0。使用 v1.1.1 或更早版本的用户需手动安装一次新版。左侧「问题反馈」打开公开仓库的 GitHub Issues。
+Hub 启动时、每隔 6 小时以及点击「刷新版本」时检查更新。发现新版后会自动下载并校验，点击「重启并更新」可立即安装，也可在本次退出时安装。静默升级沿用已选的快捷方式。v1.1.2 及后续版本可以自动升级至 v1.2.1。使用 v1.1.1 或更早版本的用户需手动安装一次新版。左侧「问题反馈」打开公开仓库的 GitHub Issues。
 
 版本库从发行仓库 main 分支根目录的 `announcements.json` 读取纯文本公告。更新该文件即可发布公告，`items` 设为空数组即可撤下。离线时显示最近成功读取的公告。
 
@@ -22,7 +22,7 @@ Hub 启动时、每隔 6 小时以及点击「刷新版本」时检查更新。�
 
 「已安装」页面可在原安装位置更新、校验、修复或移除选中的版本。有配套增量包时优先传输变更文件，验证成功后切换目录。每个原位升级的版本保留原启动路径。独立安装仍可用于并行维护多个版本。
 
-侧栏的模型管理、编辑器配置和参考工程连接同一个 Godot 用户资料目录。内置离线文档支持标题与正文搜索。操作说明见 [Hub 使用手册](guides/hub.md)、[编辑器教程](guides/editor.md) 和 [模块入口](guides/modules.md)。
+顶部按启动、下载、设置、更多分组。下载下的模型管理、设置下的编辑器配置、更多下的参考工程共用编辑器的用户资料目录。内置离线文档支持标题与正文搜索。操作说明见 [Hub 使用手册](guides/hub.md)、[编辑器教程](guides/editor.md) 和 [模块入口](guides/modules.md)。
 
 ## 构建
 
@@ -30,7 +30,7 @@ Hub 启动时、每隔 6 小时以及点击「刷新版本」时检查更新。�
 
 ```powershell
 dotnet publish RevelationHub.csproj -c Release -r win-x64 --self-contained true -o bin/publish
-wix build Installer.wxs -arch x64 -d "PublishDir=$PWD/bin/publish" -d "LicenseFile=$PWD/../LICENSE" -o bin/Revelation-Hub-v1.2.0-x64.msi
+wix build Installer.wxs -arch x64 -d "PublishDir=$PWD/bin/publish" -d "LicenseFile=$PWD/../LICENSE" -o bin/Revelation-Hub-v1.2.1-x64.msi
 ```
 
 ## 维护发行目录
