@@ -1,6 +1,6 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package Name="更好的制谱器 Hub" Manufacturer="Revelation Hub" Version="1.3.0" UpgradeCode="D7B58CEC-A20B-4241-AB97-718966748E29" Language="2052" Codepage="936" Scope="perUser" InstallerVersion="500">
-    <MajorUpgrade DowngradeErrorMessage="已安装更高版本的制谱器 Hub。" />
+    <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="已安装更高版本的制谱器 Hub。" />
     <MediaTemplate EmbedCab="yes" CompressionLevel="medium" />
     <Icon Id="RevelationHub.ico" SourceFile="$(sys.SOURCEFILEDIR)assets\Revelation.ico"/>
     <Property Id="ARPPRODUCTICON" Value="RevelationHub.ico"/>
@@ -32,6 +32,30 @@
     <UI>
       <TextStyle Id="HubFont" FaceName="Microsoft YaHei UI" Size="9"/>
       <TextStyle Id="HubTitle" FaceName="Microsoft YaHei UI" Size="13" Bold="yes"/>
+      <Dialog Id="HubWelcome" Width="300" Height="150" Title="[ProductName] 安装" NoMinimize="yes">
+        <Control Id="Title" Type="Text" X="16" Y="14" Width="268" Height="22" Text="{\HubTitle}安装 [ProductName]"/>
+        <Control Id="Info" Type="Text" X="16" Y="48" Width="268" Height="36" Text="点击「安装」将 v[ProductVersion] 安装到当前 Windows 账户，或更新已有版本。"/>
+        <Control Id="Line" Type="Line" X="0" Y="112" Width="300" Height="1"/>
+        <Control Id="Install" Type="PushButton" X="154" Y="123" Width="60" Height="18" Default="yes" Text="安装">
+          <Publish Property="REINSTALL" Value="ALL" Condition="Installed" Order="1"/>
+          <Publish Event="EndDialog" Value="Return" Order="2"/>
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="224" Y="123" Width="60" Height="18" Cancel="yes" Text="取消">
+          <Publish Event="EndDialog" Value="Exit"/>
+        </Control>
+      </Dialog>
+      <Dialog Id="HubProgress" Width="300" Height="116" Title="[ProductName] 安装进度" Modeless="yes">
+        <Control Id="Title" Type="Text" X="16" Y="14" Width="268" Height="22" TabSkip="no" Text="{\HubTitle}正在处理 [ProductName]"/>
+        <Control Id="Stage" Type="Text" X="16" Y="46" Width="268" Height="20" Text="正在准备文件…">
+          <Subscribe Event="ActionText" Attribute="Text"/>
+        </Control>
+        <Control Id="Progress" Type="ProgressBar" X="16" Y="76" Width="268" Height="12" ProgressBlocks="no" Text="0">
+          <Subscribe Event="SetProgress" Attribute="Progress"/>
+        </Control>
+      </Dialog>
+      <ProgressText Action="InstallFiles" Message="正在复制 Hub 文件…"/>
+      <ProgressText Action="RegisterProduct" Message="正在注册应用…"/>
+      <ProgressText Action="RemoveFiles" Message="正在移除文件…"/>
       <Dialog Id="HubFinished" Width="300" Height="155" Title="[ProductName]" NoMinimize="yes">
         <Control Id="Title" Type="Text" X="14" Y="12" Width="268" Height="20" Text="{\HubTitle}安装完成"/>
         <Control Id="Prompt" Type="Text" X="14" Y="38" Width="268" Height="15" Text="选择添加快捷方式的位置"/>
@@ -45,7 +69,9 @@
       </Dialog>
     </UI>
     <InstallUISequence>
-      <Show Dialog="HubFinished" OnExit="success" Condition="NOT Installed AND NOT REMOVE~=&quot;ALL&quot; AND UILevel = 5"/>
+      <Show Dialog="HubWelcome" After="CostFinalize" Condition="NOT REMOVE~=&quot;ALL&quot; AND UILevel = 5"/>
+      <Show Dialog="HubProgress" Before="ExecuteAction" Condition="UILevel &gt;= 4"/>
+      <Show Dialog="HubFinished" OnExit="success" Condition="NOT REMOVE~=&quot;ALL&quot; AND UILevel = 5"/>
     </InstallUISequence>
     <InstallExecuteSequence>
       <Custom Action="RestoreShortcuts" After="InstallFinalize" Condition="NOT REMOVE~=&quot;ALL&quot; AND UILevel &lt; 5"/>

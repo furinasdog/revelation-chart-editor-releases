@@ -130,7 +130,7 @@ internal sealed class HubServices(string root, HttpClient http)
         using var locked = File.OpenRead(path);
         if (locked.Length != entry.size || !Convert.ToHexString(await SHA256.HashDataAsync(locked)).Equals(entry.sha256, StringComparison.OrdinalIgnoreCase)) return 3;
         var start = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "msiexec.exe")) { UseShellExecute = false };
-        foreach (string arg in new[] { "/i", path, "/qn", "/norestart", "/L*v", Path.Combine(Path.GetDirectoryName(path), "install.log") }) start.ArgumentList.Add(arg);
+        foreach (string arg in new[] { "/i", path, "/passive", "/norestart", "/L*v", Path.Combine(Path.GetDirectoryName(path), "install.log") }) start.ArgumentList.Add(arg);
         using var install = Process.Start(start);
         await install.WaitForExitAsync();
         if (install.ExitCode != 0 && install.ExitCode != 3010) return install.ExitCode;
