@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Threading;
 using System.Threading.Tasks;
 using RevelationHub;
@@ -14,16 +15,29 @@ internal class Program
     sealed class Routes : HttpMessageHandler
     {
         public string Archive, Catalog;
-        public bool RejectPrimary;
-        public readonly List<Uri> Requests = new();
+        public bool RejectPrimary, SupportRanges;
+        private int cut;
+        public bool Resumed;
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage req, CancellationToken cancellation)
         {
-            Requests.Add(req.RequestUri);
             var response = new HttpResponseMessage(HttpStatusCode.OK);
             if (RejectPrimary && req.RequestUri.Host is "raw.githubusercontent.com" or "github.com")
                 response.StatusCode = HttpStatusCode.ServiceUnavailable;
             else if (req.RequestUri.AbsolutePath.EndsWith(".json"))
                 response.Content = new StringContent(File.ReadAllText(Catalog));
+            else if (SupportRanges && req.Headers.Range?.Ranges.SingleOrDefault() is {From: long from, To: long to})
+            {
+                using var file = File.OpenRead(Archive);
+                int count = checked((int)(to - from + 1));
+                if (from == 0 && Interlocked.Exchange(ref cut, 1) == 0) count /= 2;
+                if (from == 524288) Resumed = true;
+                file.Position = from;
+                byte[] bytes = new byte[count];
+                file.ReadExactly(bytes);
+                response.StatusCode = HttpStatusCode.PartialContent;
+                response.Content = new ByteArrayContent(bytes);
+                response.Content.Headers.ContentRange = new ContentRangeHeaderValue(from, to, file.Length);
+            }
             else
                 response.Content = new StreamContent(File.OpenRead(Archive));
             return Task.FromResult(response);
@@ -32,11 +46,18 @@ internal class Program
     sealed class Observer : IProgress<Transfer>
     {
         public bool Bytes, Verifying, Installing, Mirror;
+        public bool Log;
+        private readonly Stopwatch clock = Stopwatch.StartNew();
         public void Report(Transfer t) {
             Bytes |= t.Bytes > 0 && t.Total >= t.Bytes;
             Verifying |= t.Stage.Contains("校验");
             Installing |= t.Stage.Contains("安装");
             Mirror |= t.Stage.Contains("镜像");
+            if (Log && (t.Total == 0 || clock.Elapsed.TotalSeconds >= 15 || t.Bytes == t.Total))
+            {
+                Console.WriteLine($"{t.Stage} {t.Bytes/1048576.0:F1} / {t.Total/1048576.0:F1} MiB");
+                clock.Restart();
+            }
         }
     }
     static void Check(bool ok,string label) { if (!ok) throw new Exception(label); Console.WriteLine(label); }
@@ -61,7 +82,8 @@ internal class Program
     static async Task Main(string[] args)
     {
         var work = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "revelation-hub-" + Guid.NewGuid().ToString("N"))).FullName;
-        using var http = new HttpClient(new Routes {Archive=args[0],Catalog=args[1],RejectPrimary=true});
+        var routes = new Routes {Archive=args[0],Catalog=args[1],RejectPrimary=true,SupportRanges=true};
+        using var http = new HttpClient(routes);
         try {
             var service = new Distribution(work,http);
             var releases = await service.Refresh(CancellationToken.None);
@@ -69,6 +91,7 @@ internal class Program
             Check(service.CatalogSource.Contains("镜像"),"Mirror catalog fallback");
             var observer = new Observer();
             await service.Install(r,observer,CancellationToken.None);
+            Check(routes.Resumed, "Interrupted byte range resumed at the first missing byte");
             Check(service.Installed(r.version) && service.LocalVersions().Contains(r.version),"Verified ZIP installed atomically");
             Check(observer.Bytes && observer.Mirror && observer.Verifying && observer.Installing,"Download progress, mirror, verification and installation");
             Check(File.Exists(Path.ChangeExtension(service.Executable(r.version),".pck")),"Launch target and resources");
@@ -91,7 +114,7 @@ internal class Program
                 var releaseLibrary=new Distribution(Path.Combine(work,"live"),online);
                 var result=await releaseLibrary.Refresh(CancellationToken.None);
                 Check(releaseLibrary.CatalogSource.Contains("同步"),"Live signed catalog: "+releaseLibrary.CatalogSource);
-                var progress=new Observer();
+                var progress=new Observer { Log=true };
                 await releaseLibrary.Install(result.Single(x=>x.version=="1.1.0"),progress,CancellationToken.None);
                 Check(releaseLibrary.Installed("1.1.0"),"Live release download and install; mirror="+progress.Mirror);
             }

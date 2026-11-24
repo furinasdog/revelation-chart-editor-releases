@@ -123,7 +123,7 @@ namespace RevelationHub
             CatalogSource = "在线目录不可用 · " + CatalogSource;
             return fallback;
         }
-        private static async Task<long> CopyLimited(HttpResponseMessage response, Stream to, long limit, CancellationToken ct, Action<long> progress)
+        internal static async Task<long> CopyLimited(HttpResponseMessage response, Stream to, long limit, CancellationToken ct, Action<long> progress)
         {
             if (response.Content.Headers.ContentLength > limit) throw new InvalidDataException("下载大小超出发行记录。");
             using (var input = await response.Content.ReadAsStreamAsync().ConfigureAwait(false))
@@ -170,43 +170,8 @@ namespace RevelationHub
                 var asset = "Revelation-Editor-v" + r.version + "-Windows-x64.zip";
                 var github = "https://github.com/" + Repository + "/releases/download/v" + r.version + "/" + asset;
                 string archive = Path.Combine(scratch, "download.zip");
-                bool verified = false;
-                var failures = new List<string>();
-                foreach (var url in new[] { github, Proxy + github })
-                {
-                    string source = url == github ? "GitHub" : "镜像";
-                    try
-                    {
-                        progress.Report(new Transfer("正在连接 " + source));
-                        using (var head = CancellationTokenSource.CreateLinkedTokenSource(ct))
-                        {
-                            head.CancelAfter(TimeSpan.FromSeconds(10));
-                            using (var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, head.Token).ConfigureAwait(false))
-                            using (var file = new FileStream(archive, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true))
-                            {
-                                head.CancelAfter(Timeout.Infinite);
-                                response.EnsureSuccessStatusCode();
-                                var watch = Stopwatch.StartNew();
-                                long total = await CopyLimited(response, file, r.size, ct, received => {
-                                    if (watch.ElapsedMilliseconds >= 100 || received == r.size) {
-                                        progress.Report(new Transfer(source + " 下载中", received, r.size)); watch.Restart();
-                                    }
-                                }).ConfigureAwait(false);
-                                if (total != r.size) throw new InvalidDataException("下载不完整。");
-                            }
-                        }
-                        progress.Report(new Transfer("正在校验 SHA-256"));
-                        using (var hash = SHA256.Create())
-                        using (var f = File.OpenRead(archive))
-                            if (!String.Equals(BitConverter.ToString(hash.ComputeHash(f)).Replace("-", ""), r.sha256, StringComparison.OrdinalIgnoreCase))
-                                throw new InvalidDataException("文件校验不匹配。");
-                        verified = true;
-                        break;
-                    }
-                    catch (Exception ex) when (ex is HttpRequestException || ex is IOException || ex is InvalidDataException || ex is OperationCanceledException || ex is ObjectDisposedException)
-                    { ct.ThrowIfCancellationRequested(); failures.Add(source + "：" + ex.Message); }
-                }
-                if (!verified) throw new IOException(string.Join("；", failures));
+                string[] sources = { github, Proxy + github, "https://ghfast.top/" + github };
+                await new PackageDownload(client, sources, r, progress).Fetch(archive, ct).ConfigureAwait(false);
                 progress.Report(new Transfer("正在安装"));
                 await Task.Run(() => Extract(archive, unpacked, ct), ct).ConfigureAwait(false);
                 ct.ThrowIfCancellationRequested();
