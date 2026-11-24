@@ -66,6 +66,11 @@ public partial class MainWindow
             }
         }
         catch(Exception ex) { Message(ex.Message,true); }
+        if (changed)
+        {
+            FadePage(OnLibrary ? LibraryBody : ManagerBody);
+            FadePage(PageTitle);
+        }
     }
     private static Button ActionButton(string name,Action action)
     {
@@ -107,7 +112,7 @@ public partial class MainWindow
     {
         if(download!=null){Message("请等待当前任务完成，或先取消。");return;}
         download=CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
-        var job=download;ApplyButton.IsEnabled=false;
+        var job=download;UpdateDialogAction();
         RefreshEditorActions();
         SetProgress(JobProgress,0);
         Transfer latest=new("处理中…");
@@ -124,7 +129,7 @@ public partial class MainWindow
         try{result=await work(progress,job.Token);}
         catch(OperationCanceledException){result="已取消。";}
         catch(Exception ex){result=ex.Message;failed=true;}
-        finally{download=null;job.Dispose();ShowTransfer(hubTransfer);ApplyButton.IsEnabled=true;RefreshEditorActions();}
+        finally{download=null;job.Dispose();ShowTransfer(hubTransfer);UpdateDialogAction();RefreshEditorActions();}
         if(closing){Close();return;}
         try {changed?.Invoke();}catch(Exception ex){result=ex.Message;failed=true;}
         Message(result,failed);
@@ -173,7 +178,9 @@ public partial class MainWindow
             ManagerBody.ScrollToHome();
             var slide = new TranslateTransform();
             mark.RenderTransform = slide;
-            if (!AnimateControls || previous == selected) return;
+            if (previous == selected) return;
+            FadePage((FrameworkElement)current.Content);
+            if (!AnimateControls) return;
             DoubleAnimation Transition(double start, double end) => new(start, end, TimeSpan.FromMilliseconds(220))
                 { EasingFunction=new CubicEase { EasingMode=EasingMode.EaseOut }, FillBehavior=FillBehavior.Stop };
             slide.BeginAnimation(TranslateTransform.XProperty, Transition(from, 0));
@@ -223,6 +230,7 @@ public partial class MainWindow
         var inc=Toggle("优先使用增量包更新编辑器",options.Incremental);
         var auto=Toggle("自动检查并下载 Hub 更新",options.AutoUpdates);
         section.Children.Add(inc);section.Children.Add(auto);
+        Actions(Manager).Children.Add(ActionButton("检查 Hub 更新",()=>_ = CheckServices(true,true)));
         Heading("界面");
         var notices=Toggle("显示发行公告通知",options.Announcements);
         var motion=Toggle("启用界面缓动动画",options.Animations);
@@ -230,7 +238,7 @@ public partial class MainWindow
         Detail("Windows 关闭动画时，Hub 也会关闭交互动效。");
         Actions(Manager).Children.Add(ActionButton("保存设置",()=>Act(()=>{
             var updated=new HubOptions(motion.IsChecked==true,inc.IsChecked==true,notices.IsChecked==true,auto.IsChecked==true);
-            updated.Save(library.Root);options=updated;if(!options.Announcements){announcementQueue.Clear();announced.Clear();}_=CheckServices(false);Message("Hub 设置已保存。");
+            updated.Save(library.Root);options=updated;if(!options.Announcements)pendingDialogs.RemoveAll(d=>d.Key=="notices");_=CheckServices(false);Message("Hub 设置已保存。");
         })));
     }
     private void ReferencePage()

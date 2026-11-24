@@ -23,6 +23,10 @@ internal partial class Program
         var cards=(Panel)w.FindName("Cards");
         void Click(Button button) => button.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
         Click((Button)w.FindName("RefreshButton"));Pump(150);
+        var update=(Grid)w.FindName("FeedbackOverlay");
+        Check(update.IsVisible && ((TextBlock)w.FindName("DialogTitle")).Text.Contains("制谱器 v"), "An installed editor with an available update opens the version dialog");
+        Check(!Children<TextBlock>((Panel)w.FindName("HintStack")).Any(t=>t.Text.Contains("可更新")), "Editor update is absent from the toast stack");
+        Click((Button)w.FindName("FeedbackOk"));Pump(170);
         Button StartButton() => Children<Button>(cards).Single(b=>Equals(b.Content,"启动"));
         Check(!Children<ProgressBar>(cards).Any(), "Transfer progress is confined to the footer");
         bool HasText(string text) => Children<TextBlock>((Panel)w.FindName("HintStack")).Any(t=>t.IsVisible && t.Text.Contains(text));

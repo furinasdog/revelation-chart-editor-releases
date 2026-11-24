@@ -20,11 +20,12 @@ namespace RevelationHub
         private readonly Distribution library;
         private readonly HubServices services;
         private readonly DispatcherTimer serviceTimer = new() { Interval = TimeSpan.FromHours(6) };
-        private bool checkingServices, reopenAfterUpdate;
+        private bool reopenAfterUpdate, showUpdateResult;
+        private Task updateRequest;
         private string readyVersion;
         private readonly CancellationTokenSource lifetime = new CancellationTokenSource();
         private Transfer hubTransfer;
-        private readonly HashSet<Notice> announced = new();
+        private Release offeredHub;
         private Release[] available = Array.Empty<Release>();
         private CancellationTokenSource download;
         private string activeVersion;
@@ -67,7 +68,13 @@ namespace RevelationHub
             }
             if (readyVersion == null) return;
             try { services.StartUpdater(readyVersion, reopenAfterUpdate); readyVersion = null; }
-            catch (Exception ex) { if (reopenAfterUpdate) e.Cancel = true; Message("更新未能启动 · " + ex.Message, true); }
+            catch (Exception ex)
+            {
+                if (!reopenAfterUpdate) return;
+                e.Cancel = true;
+                reopenAfterUpdate = false;
+                ShowDialogMessage(new("hub-check", "Hub 更新未能启动", ex.Message, []), true);
+            }
         }
         private async Task Refresh()
         {
@@ -77,37 +84,36 @@ namespace RevelationHub
                 available = await library.Refresh(lifetime.Token);
                 NotifySync(library.CatalogSynced, library.CatalogSource);
                 Render();
+                if (library.CatalogSynced) AnnounceEditorUpdate();
             }
             catch (OperationCanceledException) { }
             catch (Exception ex) { NotifySync(false, ex.Message); }
             finally { RefreshButton.IsEnabled = true; }
         }
         private async void RefreshClick(object sender, RoutedEventArgs e) { if (OnLibrary) await Task.WhenAll(Refresh(), CheckServices(true)); else Navigate(page,true); }
-        private void ApplyClick(object sender, RoutedEventArgs e) { if (download == null && readyVersion != null) { reopenAfterUpdate = true; Close(); } }
-        private async Task CheckServices(bool manual)
+        private async Task CheckServices(bool manual, bool explicitCheck = false)
         {
-            if (checkingServices) return;
-            checkingServices = true;
-            try { await Task.WhenAll(options.Announcements ? ReadNotices() : Task.CompletedTask, options.AutoUpdates || manual ? CheckUpdate(manual) : Task.CompletedTask); }
-            finally { checkingServices = false; }
-        }
-        private async Task ReadNotices()
-        {
-            try
-            {
-                var items = await services.Notices(lifetime.Token);
-                if (!options.Announcements) return;
-                announced.IntersectWith(items);
-                foreach (var item in items)
-                    if (announced.Add(item)) announcementQueue.Enqueue(item.title + "\n" + item.body);
-                NextAnnouncement();
-            }
-            catch (OperationCanceledException) { }
-            catch (Exception) { /* Keep the last displayed notice while offline. */ }
+            await Task.WhenAll(options.Announcements ? ReadNotices() : Task.CompletedTask,
+                options.AutoUpdates || manual ? CheckUpdate(explicitCheck) : Task.CompletedTask);
         }
         private async Task CheckUpdate(bool manual)
         {
-            if (readyVersion != null) return;
+            if (readyVersion != null)
+            {
+                if (manual) AnnounceHubUpdate(offeredHub, true, true);
+                return;
+            }
+            showUpdateResult |= manual;
+            if (manual && offeredHub != null) AnnounceHubUpdate(offeredHub, false, true);
+            var request = updateRequest ??= PrepareUpdate();
+            try { await request; }
+            finally
+            {
+                if (updateRequest == request) { updateRequest = null; showUpdateResult = false; }
+            }
+        }
+        private async Task PrepareUpdate()
+        {
             bool checkingTransfer = true;
             try
             {
@@ -118,21 +124,28 @@ namespace RevelationHub
                     hubTransfer = new Transfer("Hub 更新 · " + t.Stage, t.Bytes, t.Total);
                     if (download == null) ShowTransfer(hubTransfer);
                 });
-                readyVersion = await services.Prepare(HubServices.Current, progress, lifetime.Token);
+                Task OnAvailable(Release release) => Dispatcher.InvokeAsync(() =>
+                {
+                    if (lifetime.IsCancellationRequested) return;
+                    offeredHub = release;
+                    AnnounceHubUpdate(release, false, showUpdateResult);
+                }).Task;
+                readyVersion = await services.Prepare(HubServices.Current, progress, lifetime.Token, OnAvailable);
+                if (lifetime.IsCancellationRequested) return;
                 if (readyVersion != null)
                 {
-                    ApplyButton.Visibility = Visibility.Visible;
-                    ApplyButton.IsEnabled = download == null;
-                    Message($"Hub v{readyVersion} 已就绪，退出时自动安装。");
+                    AnnounceHubUpdate(offeredHub, true, showUpdateResult);
                 }
-                else if (manual) Message("Hub 已是最新版本。");
+                else if (showUpdateResult) ShowDialogMessage(new("hub-check","Hub 版本更新","当前已是最新版本。",[]),true);
             }
             catch (OperationCanceledException) { }
             catch (Exception ex)
             {
-                if (manual || hubTransfer != null)
-                    Message(ex is FileNotFoundException or DirectoryNotFoundException
-                        ? "Hub 更新源暂时不可用，可稍后重试。" : "暂时无法更新 Hub · " + ex.Message, true);
+                if (showUpdateResult || offeredHub != null || hubTransfer != null)
+                    ShowDialogMessage(new(offeredHub == null ? "hub-check" : "hub/" + offeredHub.version,
+                        "Hub 更新暂时不可用", ex is FileNotFoundException or DirectoryNotFoundException
+                            ? "请稍后在「设置 → Hub 设置」重新检查更新。" : ex.Message, []), true);
+                offeredHub = null;
             }
             finally
             {
@@ -237,7 +250,7 @@ namespace RevelationHub
         {
             if (download != null) return;
             download = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
-            ApplyButton.IsEnabled = false;
+            UpdateDialogAction();
             activeVersion = r.version;
             var job = download;
             ShowTransfer(new Transfer("准备下载 v" + r.version));
@@ -247,7 +260,7 @@ namespace RevelationHub
             catch (OperationCanceledException) { Message("已取消下载。"); }
             catch (Exception ex) { Message("安装失败 · " + ex.Message, true); }
             finally {
-                download.Dispose(); download=null; activeVersion=null; ApplyButton.IsEnabled=true;
+                download.Dispose(); download=null; activeVersion=null; UpdateDialogAction();
                 ShowTransfer(hubTransfer); RefreshEditorActions();
                 if (closing) Close(); else Render();
             }

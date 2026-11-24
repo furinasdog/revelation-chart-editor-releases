@@ -22,6 +22,7 @@
         <DockPanel>
           <StackPanel DockPanel.Dock="Bottom">
             <Separator Margin="12,5"/>
+            <Button x:Name="NoticesButton" Style="{StaticResource RailButton}" Content="公告" CommandParameter="&#xE789;" Click="NoticesClick"/>
             <Button x:Name="FeedbackButton" Style="{StaticResource RailButton}" Content="问题反馈" CommandParameter="&#xE939;" Click="FeedbackClick"/>
             <Button Style="{StaticResource RailButton}" Content="安装目录" CommandParameter="&#xE8B7;" Click="OpenFolder"/>
             <TextBlock x:Name="HubVersionLabel" Foreground="{StaticResource Muted}" FontSize="12" Margin="18,9,0,2"/>
@@ -48,11 +49,10 @@
           </StackPanel></ScrollViewer>
           <ScrollViewer x:Name="ManagerBody" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel x:Name="Manager" Margin="0,0,4,0"/></ScrollViewer>
         </Grid>
-        <Grid x:Name="JobPanel" Grid.Row="2" Margin="0,0,4,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+        <Grid x:Name="JobPanel" Grid.Row="2" Margin="0,0,4,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
           <TextBlock x:Name="JobStatus" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" Foreground="{StaticResource Muted}" AutomationProperties.LiveSetting="Polite" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
           <ProgressBar x:Name="JobProgress" Grid.Column="1" Visibility="Collapsed" Width="80" Height="4" VerticalAlignment="Center" Margin="10,0" Foreground="{StaticResource Accent}"/>
           <Button x:Name="JobCancel" Grid.Column="2" Visibility="Collapsed" Content="取消" Padding="8,1" MinHeight="24" VerticalAlignment="Center" Click="CancelJob"/>
-          <Button x:Name="ApplyButton" Grid.Column="3" Content="重启并更新" Padding="8,1" MinHeight="24" VerticalAlignment="Center" Click="ApplyClick" Visibility="Collapsed"/>
         </Grid>
       </Grid>
     </Grid>
@@ -66,13 +66,19 @@
     </Canvas>
     <Grid x:Name="FeedbackOverlay" Grid.RowSpan="2" Background="#30242E40" Visibility="Collapsed"
           KeyboardNavigation.TabNavigation="Cycle" PreviewKeyDown="FeedbackKeyDown">
-      <Border x:Name="FeedbackCard" HorizontalAlignment="Center" VerticalAlignment="Center" Width="380" Padding="24,20"
-              Background="{StaticResource Paper}" BorderBrush="{StaticResource Rule}" BorderThickness="1" CornerRadius="8" AutomationProperties.Name="问题反馈">
-        <StackPanel>
-          <TextBlock Text="问题反馈" FontSize="19" FontWeight="SemiBold"/>
-          <TextBlock Text="请在制谱师/企划群中 @短夜月 反馈" Margin="0,14,0,20"/>
-          <Button x:Name="FeedbackOk" Content="知道了" HorizontalAlignment="Right" MinWidth="78" IsDefault="True" Click="DismissFeedback"/>
-        </StackPanel>
+      <Border x:Name="FeedbackCard" HorizontalAlignment="Center" VerticalAlignment="Center" Width="440" Margin="20" Padding="24,20"
+              Background="{StaticResource Paper}" BorderBrush="{StaticResource Rule}" BorderThickness="1" CornerRadius="8" AutomationProperties.LabeledBy="{Binding ElementName=DialogTitle}">
+        <Grid>
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+          <TextBlock x:Name="DialogTitle" FontSize="19" FontWeight="SemiBold"/>
+          <ScrollViewer x:Name="DialogScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,14,0,20">
+            <TextBlock x:Name="DialogText" TextWrapping="Wrap"/>
+          </ScrollViewer>
+          <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button x:Name="FeedbackOk" Content="知道了" MinWidth="78" IsDefault="True" Click="DismissFeedback"/>
+            <Button x:Name="DialogAction" Visibility="Collapsed" MinWidth="90" Margin="8,0,0,0" Click="InvokeDialogAction"/>
+          </StackPanel>
+        </Grid>
       </Border>
     </Grid>
   </Grid></Border>

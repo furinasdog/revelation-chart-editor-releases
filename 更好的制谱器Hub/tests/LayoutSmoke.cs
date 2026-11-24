@@ -23,8 +23,11 @@ internal partial class Program
     private sealed class Offline : HttpMessageHandler
     {
         internal bool CatalogOnline;
+        internal string NoticeJson = """{"schema":1,"items":[]}""";
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage r,CancellationToken ct)
         {
+            if (r.RequestUri.AbsolutePath.EndsWith("/announcements.json"))
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content=new StringContent(NoticeJson) });
             if (CatalogOnline && r.RequestUri.AbsolutePath.EndsWith("/catalog.signed.json"))
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content=new StreamContent(typeof(Distribution).Assembly.GetManifestResourceStream("RevelationHub.catalog.signed.json")) });
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
@@ -48,7 +51,7 @@ internal partial class Program
     }
     [DllImport("user32.dll")] private static extern int GetWindowLongW(IntPtr hwnd, int index);
     [DllImport("user32.dll")] private static extern IntPtr SendMessageW(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam);
-    private static async Task CheckLayout(string output, string editorDirectory = null)
+    private static async Task CheckLayout(string output, string editorDirectory = null, bool noticesOnly = false)
     {
         var done=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var thread=new Thread(()=>{
@@ -71,6 +74,12 @@ internal partial class Program
                 try
                 {
                     w.Show();Pump(260);
+                    if (noticesOnly)
+                    {
+                        CheckReleaseDialogs(w,routes);
+                        done.SetResult();
+                        return;
+                    }
                     var handle = new WindowInteropHelper(w).Handle;
                     var style = GetWindowLongW(handle, -16);
                     Check((style & 0x10000) == 0 && (style & 0x60000) == 0x60000, "Window allows resizing and minimizing, with maximization disabled");
@@ -177,8 +186,8 @@ internal partial class Program
                     var agentForm=(StackPanel)((TabItem)tabs.SelectedItem).Content;
                     Check(Grid.GetColumn(mark)==1 && Children<PasswordBox>(agentForm).Any(), "Agent tab selects the matching form");
                     if (w.AnimateControls)
-                        Check(((TranslateTransform)mark.RenderTransform).X < 0 && agentForm.RenderTransform.Value.IsIdentity && agentForm.Opacity == 1,
-                            "Only the selected tab indicator moves");
+                        Check(((TranslateTransform)mark.RenderTransform).X < 0 && agentForm.RenderTransform.Value.IsIdentity && agentForm.Opacity < 1,
+                            "The selected indicator slides and the form fades in place");
                     tabs.SelectedIndex=2;tabs.SelectedIndex=0;Pump(270);
                     Check(Grid.GetColumn(mark)==0 && ((TranslateTransform)mark.RenderTransform).X==0 && (string)combo.SelectedValue=="dark" && combo.IsVisible,
                         "Rapid tab switches settle on the last tab and keep the unsaved preference");

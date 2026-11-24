@@ -82,6 +82,7 @@ internal partial class Program
     static async Task Main(string[] args)
     {
         if (args is ["--layout", var output]) { await CheckLayout(output);return; }
+        if (args is ["--notices", var captures]) { await CheckLayout(captures,noticesOnly:true);return; }
         if (args is ["--layout", var screenshots, var editorDirectory]) { await CheckLayout(screenshots,editorDirectory);return; }
         if (args is ["--management",var oldZip,var nextZip,var delta,var signedCatalog]) { await CheckManagement(oldZip,nextZip,delta,signedCatalog);return; }
         if (args is ["--hub", var msi, var manifest, var editorCatalog])
@@ -141,7 +142,13 @@ internal partial class Program
             var newest = Distribution.ReadCatalog(signed, "hub")[0];
             var progress = new Observer();
             var ct = CancellationToken.None;
-            string version = await services.Prepare(new Version(1,1,1), progress, ct);
+            bool offered = false;
+            string version = await services.Prepare(new Version(1,1,1), progress, ct, release =>
+            {
+                offered = release.version == newest.version && !progress.Bytes;
+                return Task.CompletedTask;
+            });
+            Check(offered, "A verified release is offered before downloading the MSI");
             string staged = Path.Combine(work.FullName, "updates", Path.GetFileName(msi));
             Check(version == newest.version && File.Exists(staged) && progress.Bytes && progress.Mirror, "Signed MSI staged through the mirror with progress");
             Check(await services.Prepare(Version.Parse(version), progress, ct) == null, "Current Hub skips installation");
@@ -152,6 +159,8 @@ internal partial class Program
             Check(await services.Prepare(new Version(1,1,1), progress, ct) == version && new FileInfo(staged).Length == newest.size, "Damaged staging recovered");
             string notices = Path.Combine(work.FullName, "orig-notices.json");
             routes.Catalog = notices;
+            File.WriteAllText(notices, "{}");
+            Check((await services.Notices(ct)).Any(), "First offline launch can display bundled announcements");
             File.WriteAllText(notices, """{"schema":1,"items":[{"title":"更新","body":"编辑器已发布"}]}""");
             Check((await services.Notices(ct)).Single().body == "编辑器已发布", "Raw announcement decoded");
             File.WriteAllText(notices, "{}");

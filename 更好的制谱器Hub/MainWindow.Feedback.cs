@@ -1,9 +1,7 @@
 using System;
-using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 
@@ -11,16 +9,9 @@ namespace RevelationHub;
 
 public partial class MainWindow
 {
-    private readonly Queue<string> announcementQueue = new();
     private int hintGeneration;
-    private void NextAnnouncement()
-    {
-        if (options.Announcements && !SyncHint.IsVisible && announcementQueue.TryDequeue(out var item))
-            Message(item);
-    }
     private void NotifySync(bool success, string source) =>
         Message(success ? source : "版本库同步失败 · " + source, !success);
-    private bool dismissingFeedback;
 
     private static DoubleAnimation Ease(double from, double to, int milliseconds) =>
         new(from,to,TimeSpan.FromMilliseconds(milliseconds)) {
@@ -72,7 +63,6 @@ public partial class MainWindow
             if (generation==hintGeneration)
             {
                 SyncHint.Visibility=Visibility.Collapsed;
-                NextAnnouncement();
             }
         }
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
@@ -84,38 +74,9 @@ public partial class MainWindow
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
     }
 
-    private void FeedbackClick(object sender,RoutedEventArgs e)
+    private void FadePage(FrameworkElement page)
     {
-        if (FeedbackOverlay.IsVisible) return;
-        FeedbackOverlay.Visibility=Visibility.Visible;
-        FeedbackOverlay.Opacity=1;
-        Workspace.IsEnabled=TitleBar.IsEnabled=false;
-        EnterView(FeedbackCard,0,12,200);
-        if (AnimateControls) FeedbackOverlay.BeginAnimation(OpacityProperty,Ease(0,1,160));
-        FeedbackOk.Focus();
-    }
-
-    private void FeedbackKeyDown(object sender,KeyEventArgs e)
-    {
-        if (e.Key != Key.Escape) return;
-        e.Handled=true; DismissFeedback(sender,e);
-    }
-
-    private async void DismissFeedback(object sender,RoutedEventArgs e)
-    {
-        if (dismissingFeedback || !FeedbackOverlay.IsVisible) return;
-        dismissingFeedback=true;
-        if (AnimateControls)
-        {
-            double current=FeedbackOverlay.Opacity;
-            FeedbackOverlay.Opacity=0;
-            FeedbackOverlay.BeginAnimation(OpacityProperty,Ease(current,0,130));
-            await Task.Delay(130);
-        }
-        FeedbackOverlay.Visibility=Visibility.Collapsed;
-        Workspace.IsEnabled=TitleBar.IsEnabled=true;
-        FeedbackButton.Focus();
-        dismissingFeedback=false;
+        page.BeginAnimation(OpacityProperty, AnimateControls ? Ease(.50, 1, 220) : null);
     }
 
     private void SetProgress(ProgressBar bar,double percent)

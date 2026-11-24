@@ -58,23 +58,36 @@ internal sealed class HubServices(string root, HttpClient http)
         return parse(await File.ReadAllTextAsync(cache, ct).ConfigureAwait(false));
     }
 
-    internal Task<Notice[]> Notices(CancellationToken ct) => ReadFeed("announcements.json", json =>
+    private static Notice[] ParseNotices(string json)
     {
         var feed = JsonSerializer.Deserialize<NoticeFeed>(json);
         if (feed?.schema != 1 || feed.items == null || feed.items.Length > 12 ||
             feed.items.Any(n => n == null || string.IsNullOrWhiteSpace(n.title) || n.title.Length > 120 || string.IsNullOrWhiteSpace(n.body) || n.body.Length > 1500))
             throw new InvalidDataException("公告格式有误。");
         return feed.items;
-    }, ct);
+    }
+
+    internal async Task<Notice[]> Notices(CancellationToken ct)
+    {
+        try { return await ReadFeed("announcements.json", ParseNotices, ct).ConfigureAwait(false); }
+        catch (Exception ex) when (ex is IOException or JsonException or InvalidDataException)
+        {
+            ct.ThrowIfCancellationRequested();
+            using var stream = typeof(HubServices).Assembly.GetManifestResourceStream("RevelationHub.announcements.json");
+            using var reader = new StreamReader(stream);
+            return ParseNotices(await reader.ReadToEndAsync(ct).ConfigureAwait(false));
+        }
+    }
 
     private static Release Latest(string signed) => Distribution.ReadCatalog(signed, "hub").FirstOrDefault()
         ?? throw new InvalidDataException("Hub 更新目录为空。");
 
-    internal async Task<string> Prepare(Version installed, IProgress<Transfer> progress, CancellationToken ct)
+    internal async Task<string> Prepare(Version installed, IProgress<Transfer> progress, CancellationToken ct, Func<Release,Task> available = null)
     {
         var entry = await ReadFeed(Manifest, text => (Signed:text, Newest:Latest(text)), ct).ConfigureAwait(false);
         Release r = entry.Newest;
         if (Version.Parse(r.version).CompareTo(new Version(installed.Major, installed.Minor, installed.Build)) <= 0) return null;
+        if (available != null) await available(r).ConfigureAwait(false);
         Directory.CreateDirectory(Updates);
         string target = Installer(r.version);
         if (!await Matches(target, r, ct).ConfigureAwait(false))
