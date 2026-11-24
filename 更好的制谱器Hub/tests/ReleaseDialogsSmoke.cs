@@ -52,7 +52,7 @@ internal partial class Program
         Click("设置");w.UpdateLayout();
         var body=(FrameworkElement)w.FindName("ManagerBody");
         var sections=Children<PageCard>(body).Where(card=>card.IsVisible).Take(2).ToArray();
-        Check(sections.Length==2 && body.Opacity==1 && body.RenderTransform.Value.IsIdentity,"The form stays anchored while its sections enter");
+        Check(sections.Length==2 && body.Opacity==1 && body.RenderTransform.Value.IsIdentity,"The viewport stays anchored while its cards enter");
         Check(!w.AnimateControls || SawFrame(()=>sections[0].Opacity>sections[1].Opacity),"New sections appear in reading order");
         Pump(420);
         Check(sections.All(card=>card.Opacity==1),"All sections settle at full opacity");
@@ -61,11 +61,28 @@ internal partial class Program
         var bar=(Border)settings.Template.FindName("Bar",settings);
         var scale=(ScaleTransform)bar.RenderTransform;
         Check(!w.AnimateControls || SawFrame(()=>scale.ScaleY>0 && scale.ScaleY<1),"The rail indicator grows from its center");
-        Pump(370);
+        var moving=Children<PageCard>(body).First(c=>c.IsVisible);
+        var title=Children<TextBlock>(moving).First();
+        var action=Children<Button>(moving).First();
+        double ScreenY(FrameworkElement element) => element.TranslatePoint(new Point(),w).Y;
+        if (w.AnimateControls)
+        {
+            Check(SawFrame(()=>moving.RenderTransform.Value.OffsetY < -1 && moving.Opacity > .1),"The whole card travels during entry");
+            var cardStart=ScreenY(moving);
+            var textStart=ScreenY(title);
+            var buttonStart=ScreenY(action);
+            var point=action.TranslatePoint(new Point(action.ActualWidth/2,action.ActualHeight/2),w);
+            Check(w.InputHitTest(point) is DependencyObject hit && (hit==action || action.IsAncestorOf(hit)),"The button receives hits at its animated position");
+            Pump(400);
+            var distance=ScreenY(moving)-cardStart;
+            Check(distance>1 && Math.Abs(ScreenY(title)-textStart-distance)<.01 && Math.Abs(ScreenY(action)-buttonStart-distance)<.01,
+                "Card, text and action button travel the same distance on screen");
+        }
+        else Pump(100);
         Check(scale.ScaleY==1,"The selected rail indicator settles at full height");
         var motion=Children<CheckBox>(w).Single(b=>Equals(b.Content,"启用界面缓动动画"));
         motion.IsChecked=false;Click("保存设置");
         Click("编辑器配置");
-        Check(!w.AnimateControls && Children<PageCard>(body).All(c=>c.Opacity==1 && !c.HasAnimatedProperties),"Turning motion off makes a new page immediately usable");
+        Check(!w.AnimateControls && Children<PageCard>(body).All(c=>c.Opacity==1 && !c.HasAnimatedProperties && c.RenderTransform.Value.IsIdentity),"Turning motion off makes a new page immediately usable");
     }
 }

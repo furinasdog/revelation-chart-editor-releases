@@ -28,26 +28,26 @@ internal static class HubMotion
     }
 }
 
-// Only the painted surface travels. Fields and their hit areas keep their final coordinates.
 internal sealed class PageCard : Border
 {
-    private readonly Border surface;
-    private readonly TranslateTransform offset = new();
+    private readonly TranslateTransform travel = new();
+    private readonly TranslateTransform settle = new();
 
     internal PageCard(Style style, FrameworkElement content)
     {
-        surface = new Border { Style = style, IsHitTestVisible = false, RenderTransform = offset };
-        Margin = surface.Margin;
-        surface.Margin = new Thickness(0);
-        var layers = new Grid { ClipToBounds = true };
-        layers.Children.Add(surface);
-        layers.Children.Add(new Border { BorderThickness = surface.BorderThickness, Padding = surface.Padding, Child = content });
-        Child = layers;
+        Style = style;
+        Child = content;
+        // Move the card's entire visual tree so text, controls and hit testing follow its face.
+        var movement = new TransformGroup();
+        movement.Children.Add(travel);
+        movement.Children.Add(settle);
+        RenderTransform = movement;
     }
 
     internal void Enter(int delay, bool motion)
     {
         BeginAnimation(OpacityProperty, motion ? HubMotion.Tween(0, 1, 105, delay) : null);
-        offset.BeginAnimation(TranslateTransform.YProperty, motion ? HubMotion.Tween(-14, 0, 335, delay, true) : null);
+        travel.BeginAnimation(TranslateTransform.YProperty, motion ? HubMotion.Tween(-5,0,250,delay) : null);
+        settle.BeginAnimation(TranslateTransform.YProperty, motion ? HubMotion.Tween(-11,0,350,delay,true) : null);
     }
 }

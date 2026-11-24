@@ -6,7 +6,7 @@ Hub 使用 C#、WPF 和 .NET 10 LTS。安装器自带运行时。它优先从 Gi
 
 ## Hub v1.3.2
 
-卡片依次出现，导航选中条舒展，按钮轻压回弹。公告和更新弹窗加入进退动效。 [发行说明](https://github.com/furinasdog/revelation-chart-editor-releases/releases/tag/hub-v1.3.2)
+切换页面时，卡片连同文字、输入框和按钮一起滑入。侧栏导航项依次入场，公告和更新弹窗轻弹展开。 [发行说明](https://github.com/furinasdog/revelation-chart-editor-releases/releases/tag/hub-v1.3.2)
 
 ## Hub v1.3.1
 

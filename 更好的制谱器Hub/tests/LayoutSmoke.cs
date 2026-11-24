@@ -143,7 +143,7 @@ internal partial class Program
                     var area=(Grid)w.FindName("ContentArea");
                     if(w.AnimateControls)
                         Check(area.Opacity==1 && area.RenderTransform.Value.IsIdentity && ((TextBlock)w.FindName("PageTitle")).IsDescendantOf(area) && ((Grid)w.FindName("JobPanel")).IsDescendantOf(area),"Changing tabs keeps the title, content and footer stationary");
-                    Pump(220);
+                    Pump(420);
                     Capture("sync-right.png");
                     var button=Button("校验");button.Focus();
                     var viewport=(ScrollViewer)w.FindName("ManagerBody");

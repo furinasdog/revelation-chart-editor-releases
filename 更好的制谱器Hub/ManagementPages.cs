@@ -48,9 +48,12 @@ public partial class MainWindow
             SelectNavigation(b,Equals(b.Content,dest));
             if (changedGroup && b.Visibility == Visibility.Visible)
             {
-                b.ApplyTemplate();
-                if (b.Template.FindName("NavLabel",b) is FrameworkElement label)
-                    label.BeginAnimation(OpacityProperty, AnimateControls ? HubMotion.Tween(0,1,100,railIndex * 26) : null);
+                int delay = railIndex * 26;
+                var enter = new TranslateTransform();
+                b.RenderTransform = enter;
+                b.BeginAnimation(OpacityProperty,AnimateControls ? HubMotion.Tween(0,1,100,delay) : null);
+                if (AnimateControls)
+                    enter.BeginAnimation(TranslateTransform.XProperty,HubMotion.Tween(-22,0,300,delay,true));
                 railIndex++;
             }
         }
