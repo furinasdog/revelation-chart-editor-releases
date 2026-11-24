@@ -6,6 +6,7 @@
     <PlatformTarget>x64</PlatformTarget>
     <AssemblyName>RevelationHub</AssemblyName>
     <RootNamespace>RevelationHub</RootNamespace>
+    <ApplicationIcon>assets/Revelation.ico</ApplicationIcon>
     <Version>1.1.1</Version>
     <AssemblyTitle>更好的制谱器Hub</AssemblyTitle>
     <Product>更好的制谱器Hub</Product>
@@ -18,6 +19,7 @@
   <ItemGroup>
     <Compile Remove="tests/**/*.cs"/>
     <None Remove="tests/**"/>
+    <Resource Include="assets/Revelation.ico" />
     <EmbeddedResource Include="publisher.xml" />
     <EmbeddedResource Include="catalog.signed.json" />
   </ItemGroup>

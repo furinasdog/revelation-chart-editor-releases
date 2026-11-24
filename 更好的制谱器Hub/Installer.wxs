@@ -2,6 +2,8 @@
   <Package Name="更好的制谱器 Hub" Manufacturer="Revelation Hub" Version="1.1.1" UpgradeCode="D7B58CEC-A20B-4241-AB97-718966748E29" Language="2052" Codepage="936" Scope="perUser" InstallerVersion="500">
     <MajorUpgrade DowngradeErrorMessage="已安装更高版本的制谱器 Hub。" />
     <MediaTemplate EmbedCab="yes" CompressionLevel="medium" />
+    <Icon Id="RevelationHub.ico" SourceFile="$(sys.SOURCEFILEDIR)assets\Revelation.ico"/>
+    <Property Id="ARPPRODUCTICON" Value="RevelationHub.ico"/>
     <StandardDirectory Id="ProgramMenuFolder"/>
     <StandardDirectory Id="LocalAppDataFolder">
       <Directory Id="ProgramsDirectory" Name="Programs">
@@ -12,7 +14,7 @@
             <File Id="RuntimeLicense" Source="$(sys.SOURCEFILEDIR)licenses\dotnet-LICENSE.txt"/>
             <File Id="WpfLicense" Source="$(sys.SOURCEFILEDIR)licenses\windowsdesktop-LICENSE.txt"/>
             <File Id="RuntimeNotices" Source="$(sys.SOURCEFILEDIR)licenses\dotnet-THIRD-PARTY-NOTICES.txt"/>
-            <Shortcut Id="StartMenu" Directory="ProgramMenuFolder" Name="更好的制谱器 Hub" Target="[#HubExe]" WorkingDirectory="INSTALLFOLDER"/>
+            <Shortcut Id="StartMenu" Directory="ProgramMenuFolder" Name="更好的制谱器 Hub" Target="[#HubExe]" WorkingDirectory="INSTALLFOLDER" Icon="RevelationHub.ico" IconIndex="0"/>
             <RemoveFolder Id="RemoveHubFolder" Directory="INSTALLFOLDER" On="uninstall"/>
             <RegistryValue Root="HKCU" Key="Software\RevelationHub" Name="Installed" Type="integer" Value="1" KeyPath="yes"/>
           </Component>
