@@ -4,7 +4,9 @@ Windows x64 版本管理器。下载并安装 Hub 后，可在「版本库」选
 
 Hub 使用 C#、WPF 和 .NET 10 LTS。安装器自带运行时。它优先从 GitHub 获取发行包，连接失败时尝试镜像，以发行签名和 SHA-256 校验内容。各编辑器版本独立安装，可离线启动。[Hub 源码及构建说明](更好的制谱器Hub/README.md)
 
-## 编辑器 v1.1.0
+## 编辑器 v1.1.1
+
+v1.1.1 修复 Agent 设置窗口异常增高及高 DPI 下操作按钮超出可用区域的问题。打开 Hub 的「版本库」，点击「刷新版本」即可选择安装。[编辑器发行页](https://github.com/furinasdog/revelation-chart-editor-releases/releases/tag/v1.1.1)
 
 从「工具 → Agent 设置」配置兼容服务。从「工具 → Revelation Co-pilot」打开侧栏，点「一键制谱」，选难度并填写整曲或局部补谱要求。助手提交改动供你确认，写入后可整轮撤销。首次制谱引导可直接打开配置和助手。
 

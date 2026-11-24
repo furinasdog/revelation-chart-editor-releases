@@ -48,8 +48,9 @@ func _run() -> void:
 	desktop._open_about()
 	var about_tabs: TabContainer = desktop._about.get_child(0)
 	var version: String = ProjectSettings.get_setting("application/config/version")
-	_check(about_tabs.get_child(0).get_child(0).text.contains("v" + version), "About shows the project version")
-	_check(about_tabs.get_child(0).get_child(2).text == "分支作者：短夜月", "About credits the branch author")
+	var version_info := about_tabs.get_child(0).get_child(0)
+	_check(version_info.get_child(0).text.contains("v" + version), "About shows the project version")
+	_check(version_info.get_child(2).text == "分支作者：短夜月", "About credits the branch author")
 	for page in [1, 2]:
 		var licenses: Control = about_tabs.get_child(page)
 		var picker: OptionButton = licenses.get_child(0)

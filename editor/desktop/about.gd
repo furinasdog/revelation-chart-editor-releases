@@ -28,7 +28,7 @@ func _ready() -> void:
 	title = "关于更好的制谱器"
 	transient = true
 	exclusive = true
-	min_size = Vector2i(500, 350)
+	min_size = Vector2i(320, 175)
 	close_requested.connect(hide)
 	var tabs := TabContainer.new()
 	add_child(tabs)
@@ -37,10 +37,14 @@ func _ready() -> void:
 	tabs.offset_top = 10
 	tabs.offset_right = -12
 	tabs.offset_bottom = -12
+	var scroll := ScrollContainer.new()
+	scroll.name = "版本信息"
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	tabs.add_child(scroll)
 	var version := VBoxContainer.new()
-	version.name = "版本信息"
+	version.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	version.add_theme_constant_override("separation", 7)
-	tabs.add_child(version)
+	scroll.add_child(version)
 	for line: String in [
 		"更好的制谱器 v%s" % ProjectSettings.get_setting("application/config/version", ""),
 		"Revelation 桌面谱面编辑器",
@@ -51,6 +55,7 @@ func _ready() -> void:
 		"音频分析  ·  Beat This!、madmom、Essentia、Music2Emo、RMVPE",
 	]:
 		var label := Label.new()
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		label.text = line
 		version.add_child(label)
 	var brand := TextureRect.new()
@@ -68,6 +73,8 @@ func _add_licenses(tabs: TabContainer, title_text: String, files: Dictionary) ->
 	page.name = title_text
 	tabs.add_child(page)
 	var choose := OptionButton.new()
+	choose.fit_to_longest_item = false
+	choose.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	page.add_child(choose)
 	var text := TextEdit.new()
 	text.editable = false

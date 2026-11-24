@@ -1,5 +1,7 @@
 extends PanelContainer
 
+const DialogLayout := preload("res://desktop/dialog_layout.gd")
+
 signal visibility_requested(enabled: bool)
 signal approval_resolved(approved: bool)
 
@@ -379,7 +381,7 @@ func open_compose() -> void:
 		_compose_level.select(Plan.DIFFICULTIES.keys().find(current if current in Plan.DIFFICULTIES else "HD"))
 	_validate_compose()
 	_compose_dialog.theme = _workspace._ui_theme
-	_compose_dialog.popup_centered_clamped(Vector2i(500, 280))
+	DialogLayout.present(_compose_dialog, Vector2i(500, 280))
 
 func _validate_compose() -> void:
 	var too_long := _compose_brief.text.length() > 3000
@@ -652,7 +654,7 @@ func _ask_conflict(message: String) -> void:
 		_conflict.canceled.connect(_resolve_conflict.bind(false))
 		_workspace.host.add_child(_conflict)
 	_pending_summary = message
-	_conflict.popup_centered_clamped(Vector2i(530, 175))
+	DialogLayout.present(_conflict, Vector2i(530, 175))
 
 func _resolve_conflict(overwrite: bool) -> void:
 	_conflict.hide()

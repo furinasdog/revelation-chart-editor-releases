@@ -1,5 +1,7 @@
 extends Node
 
+const DialogLayout := preload("res://desktop/dialog_layout.gd")
+
 const Server := preload("res://desktop/mcp_server.gd")
 const Catalog := preload("res://desktop/mcp_catalog.gd")
 const Agent := preload("res://desktop/chart_agent.gd")
@@ -54,7 +56,6 @@ func setup(workspace: Node) -> void:
 	_dialog.add_child(body)
 	var intro: Label = _workspace._label("让本机 MCP 客户端读取工程、分析音频及编辑草稿。应用草稿前会在编辑器内询问。")
 	intro.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	intro.custom_minimum_size.x = 415
 	body.add_child(intro)
 	_port = SpinBox.new()
 	_port.min_value = 1024
@@ -87,7 +88,7 @@ func setup(workspace: Node) -> void:
 	_status = _workspace._label("")
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	body.add_child(_status)
-	var buttons := HBoxContainer.new()
+	var buttons := HFlowContainer.new()
 	body.add_child(buttons)
 	_toggle = _workspace._button("启动服务器", _toggle_server)
 	_copy = _workspace._button("复制连接配置", _copy_config)
@@ -98,7 +99,7 @@ func setup(workspace: Node) -> void:
 
 func open() -> void:
 	_refresh()
-	_dialog.popup_centered_clamped(Vector2i(555, 355))
+	DialogLayout.present(_dialog, Vector2i(555, 355))
 
 func apply_theme(theme: Theme) -> void:
 	_dialog.theme = theme
@@ -198,17 +199,16 @@ func _setup_client() -> void:
 	_connection_dialog.add_child(body)
 	var info: Label = _workspace._label("服务器已启动。把下面的目录作为 Codex 或 Claude Code 的项目打开，首次连接时按客户端提示信任目录或批准 Revelation。制谱时保持编辑器打开。")
 	info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	info.custom_minimum_size.x = 515
 	body.add_child(info)
 	var path := LineEdit.new()
 	path.editable = false
 	path.text = config.folder
 	_add_row(body, "项目工作目录", path)
-	var buttons := HBoxContainer.new()
+	var buttons := HFlowContainer.new()
 	body.add_child(buttons)
 	buttons.add_child(_workspace._button("复制目录路径", func(): DisplayServer.clipboard_set(path.text)))
 	buttons.add_child(_workspace._button("打开工作目录", func(): OS.shell_open(config.folder)))
-	_connection_dialog.popup_centered_clamped(Vector2i(680, 220))
+	DialogLayout.present(_connection_dialog, Vector2i(680, 220))
 
 func _dispatch_tool(id: String, client: String, name: String, arguments: Dictionary, live: Callable) -> Dictionary:
 	if not _tools.any(func(tool: Dictionary): return tool.name == name):
@@ -444,7 +444,7 @@ func _approve_request(title: String, text: String, allow: String, deny: String, 
 	_approval.ok_button_text = allow
 	_approval.cancel_button_text = deny
 	_approval.dialog_text = text
-	_approval.popup_centered_clamped(Vector2i(540, 195))
+	DialogLayout.present(_approval, Vector2i(540, 195))
 	while _approval.visible and not _approved and live.call():
 		await get_tree().create_timer(0.12).timeout
 	_approval.hide()

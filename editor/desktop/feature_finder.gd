@@ -1,5 +1,7 @@
 extends Window
 
+const DialogLayout := preload("res://desktop/dialog_layout.gd")
+
 const EditorTheme := preload("res://desktop/editor_theme.gd")
 
 var _entries: Array
@@ -15,7 +17,7 @@ func setup(workspace: Node) -> void:
 	title = "功能速查"
 	transient = true
 	exclusive = true
-	min_size = Vector2i(360, 280)
+	min_size = Vector2i(320, 220)
 	close_requested.connect(hide)
 	window_input.connect(func(event: InputEvent):
 		if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
@@ -26,8 +28,14 @@ func setup(workspace: Node) -> void:
 	add_child(_surface)
 	_surface.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var margin := MarginContainer.new()
-	add_child(margin)
-	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var scroll := ScrollContainer.new()
+	add_child(scroll)
+	scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	scroll.follow_focus = true
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.add_child(margin)
+	margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	margin.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	for side in ["left", "right", "top", "bottom"]:
 		margin.add_theme_constant_override("margin_" + side, 14)
 	var column := VBoxContainer.new()
@@ -40,6 +48,7 @@ func setup(workspace: Node) -> void:
 	_query.text_submitted.connect(func(_value: String): _go())
 	column.add_child(_query)
 	_results = ItemList.new()
+	_results.custom_minimum_size.y = 70
 	_results.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_results.item_selected.connect(_update_detail)
 	_results.item_activated.connect(func(_index: int): _go())
@@ -60,7 +69,7 @@ func open() -> void:
 	_entries = _commands(_workspace)
 	_query.clear()
 	_filter("")
-	popup_centered_clamped(Vector2i(630, 420), 0.94)
+	DialogLayout.present(self, Vector2i(630, 420))
 	_query.grab_focus()
 
 func apply_theme(value: Theme) -> void:

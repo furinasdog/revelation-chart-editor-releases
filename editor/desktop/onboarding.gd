@@ -1,5 +1,7 @@
 extends Control
 
+const DialogLayout := preload("res://desktop/dialog_layout.gd")
+
 const EditorTheme := preload("res://desktop/editor_theme.gd")
 const Chart := preload("res://main/chart_data.gd")
 const Grid := preload("res://main/grid_canvas.gd")
@@ -67,7 +69,7 @@ func open(remember := false) -> void:
 	_theme.select(_workspace.preferences.THEME_NAMES.keys().find(_original_theme))
 	_choose_experience("branch" if _workspace.preferences.has_saved_preferences else "beginner")
 	_show_setup(false)
-	_chooser.popup_centered_clamped(Vector2i(700, 264), 0.94)
+	DialogLayout.present(_chooser, Vector2i(700, 264))
 
 func _build_chooser() -> void:
 	_chooser = Window.new()
@@ -228,7 +230,7 @@ func _show_setup(settings: bool) -> void:
 	_setup_next.text = next[_experience] if settings else "下一步"
 	if _chooser.visible:
 		var previous_size := _chooser.size
-		_chooser.size.y = clampi(400 if settings else 264, 230, int(get_window().size.y * 0.86))
+		_chooser.size.y = clampi(400 if settings else 264, 230, _chooser.max_size.y)
 		_chooser.position -= Vector2i(Vector2(_chooser.size - previous_size) * 0.5)
 
 func _choose_experience(experience: String) -> void:

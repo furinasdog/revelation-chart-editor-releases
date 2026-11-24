@@ -1,5 +1,7 @@
 extends Node
 
+const DialogLayout := preload("res://desktop/dialog_layout.gd")
+
 const EditorLabels := preload("res://desktop/editor_labels.gd")
 const EditorTheme := preload("res://desktop/editor_theme.gd")
 
@@ -230,7 +232,7 @@ func open(page_name := "") -> void:
 		if page:
 			_pages.current_tab = page.get_index()
 	_refresh_audio_devices()
-	_dialog.popup_centered_clamped(Vector2i(640, 540), 0.94)
+	DialogLayout.present(_dialog, Vector2i(640, 540))
 
 func apply_theme(value: Theme) -> void:
 	if _dialog:
@@ -243,7 +245,7 @@ func _build_dialog() -> void:
 	_dialog.transient = true
 	_dialog.exclusive = true
 	_dialog.initial_position = Window.WINDOW_INITIAL_POSITION_CENTER_PRIMARY_SCREEN
-	_dialog.min_size = Vector2i(420, 360)
+	_dialog.min_size = Vector2i(320, 230)
 	_dialog.close_requested.connect(_close)
 	_dialog.window_input.connect(_capture_key)
 	_dialog.hide()

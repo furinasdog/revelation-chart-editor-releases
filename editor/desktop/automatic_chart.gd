@@ -1,5 +1,7 @@
 extends Node
 
+const DialogLayout := preload("res://desktop/dialog_layout.gd")
+
 const Agent := preload("res://desktop/chart_agent.gd")
 const AgentContext := preload("res://desktop/agent_context.gd")
 const CONFIG_PATH := "user://chart_agent.cfg"
@@ -66,7 +68,7 @@ func open_settings() -> void:
 			config.set_value("agent", "key", _settings.key)
 		if config.save(CONFIG_PATH) != OK:
 			_workspace._notify.call_deferred("无法保存 Agent 设置。本次运行仍可使用。"))
-	_settings_dialog.popup_centered_clamped(Vector2i(620, 305))
+	DialogLayout.present(_settings_dialog, Vector2i(620, 305))
 
 func _find_cover() -> String:
 	var chart: Node = _workspace.chart

@@ -1,5 +1,7 @@
 extends Node
 
+const DialogLayout := preload("res://desktop/dialog_layout.gd")
+
 const DesktopFileDialog := preload("res://desktop/desktop_file_dialog.gd")
 const Preferences := preload("res://desktop/preferences.gd")
 const Analysis := preload("res://desktop/analysis.gd")
@@ -271,6 +273,7 @@ func attach(editor: Control) -> void:
 	grid.background_clip_selected.connect(_select_background_clip)
 	preview.resolve_place_time = grid.time_at_playhead
 	host.resized.connect(apply_layout)
+	_fit_initial_window()
 	host.get_window().size_changed.connect(_refresh_scale)
 	set_process(DisplayServer.get_name() != "headless")
 	_refresh_audio()
@@ -437,7 +440,7 @@ func _open_release_notes() -> void:
 	var current := _current_release_tag()
 	var lines := PackedStringArray(Notes.ENTRIES.get(current, ["当前版本没有更新公告。"]))
 	_release_dialog.dialog_text = current + "\n\n• " + "\n\n• ".join(lines)
-	_release_dialog.popup_centered_clamped(Vector2i(540, 375))
+	DialogLayout.present(_release_dialog, Vector2i(540, 375))
 
 func _set_copilot_visible(enabled: bool) -> void:
 	if not enabled:
@@ -756,7 +759,7 @@ func _open_about() -> void:
 		_about = About.new()
 		host.add_child(_about)
 	_about.theme = host.theme
-	_about.popup_centered(Vector2i(650, 460))
+	DialogLayout.present(_about, Vector2i(650, 460))
 
 func _mount_preview_tools() -> void:
 	var tools: VBoxContainer = sidebar.get_node("编辑器工具/辅助工具栏")
@@ -1359,6 +1362,20 @@ func apply_layout() -> void:
 		_place(_empty, roll_area if roll_area.size.y >= card.get_combined_minimum_size().y else right_content)
 	host._schedule_layout_refresh()
 
+func _fit_initial_window() -> void:
+	var window := host.get_window()
+	if window.mode != Window.MODE_WINDOWED or DisplayServer.get_name() == "headless":
+		return
+	var area := DisplayServer.screen_get_usable_rect(window.current_screen)
+	if not area.has_area():
+		return
+	var frame := window.get_size_with_decorations() - window.size
+	var available := (area.size - frame).max(Vector2i.ONE)
+	if window.size.x > available.x or window.size.y > available.y:
+		window.size = window.size.min(available)
+		var inset := window.position - window.get_position_with_decorations()
+		window.position = area.position + (available - window.size) / 2 + inset
+
 func _refresh_scale() -> void:
 	var window := host.get_window()
 	var screen := window.current_screen
@@ -1394,7 +1411,7 @@ func _automatic_scale(screen: Vector2i, viewport: Vector2i, dpi := 96) -> float:
 	var height := mini(screen.y, viewport.y) if screen.y > 0 else viewport.y
 	var room_scale := minf(width / 1100.0, height / 680.0)
 	var dpi_scale := maxf(1.0, dpi / 96.0)
-	return clampf(floorf(minf(dpi_scale, room_scale) * 20.0 + 0.001) / 20.0, 0.90, 2.5)
+	return clampf(floorf(minf(dpi_scale, room_scale) * 20.0 + 0.001) / 20.0, 0.75, 2.5)
 
 func _set_scale(value: float) -> void:
 	preferences.auto_window_scale = value <= 0.0
@@ -1755,7 +1772,7 @@ func _start_video_export(path: String) -> void:
 		_video_progress.add_child(_video_meter)
 		host.add_child(_video_progress)
 	_video_meter.value = 0
-	_video_progress.popup_centered()
+	DialogLayout.present(_video_progress, Vector2i(420, 115))
 	_video.finished.connect(func(error: String):
 		if error.is_empty():
 			DesktopFileDialog.reveal_export(path), CONNECT_ONE_SHOT)
@@ -1801,7 +1818,7 @@ func import_dropped_files(paths: PackedStringArray) -> void:
 	for path in lyrics:
 		import_lyrics(path, not loaded_audio)
 	if loaded_audio:
-		_ask.popup_centered()
+		DialogLayout.present(_ask, Vector2i(490, 160))
 	elif zip_path.is_empty() and json_path.is_empty() and images.is_empty() and lyrics.is_empty():
 		_notify("请拖入谱面、音频、LRC 歌词或图片。")
 
@@ -2004,7 +2021,7 @@ func import_audio(path: String, ask: bool = true, find_lyrics := true) -> bool:
 		import_lyrics(sidecar, false)
 	chart.force_refresh()
 	if ask:
-		_ask.popup_centered()
+		DialogLayout.present(_ask, Vector2i(490, 160))
 	return true
 
 func _ensure_default_images() -> void:
@@ -2109,7 +2126,7 @@ func _show_emotion_download_progress(message: String, downloaded: int, total: in
 	_set_progress_meter(_emotion_download_meter, downloaded, total)
 	if not _emotion_download_dialog.visible:
 		_emotion_download_dialog.theme = _ui_theme
-		_emotion_download_dialog.popup_centered_clamped(Vector2i(480, 150))
+		DialogLayout.present(_emotion_download_dialog, Vector2i(480, 150))
 
 func _finish_emotion_download(path: String, message: String) -> void:
 	if is_instance_valid(_emotion_download_dialog):
@@ -2147,7 +2164,7 @@ func _show_madmom_download(model: String, source: String, index: int, total: int
 	var fraction := float(downloaded) / maxi(size, 1)
 	_set_progress_meter(_madmom_download_total, (index - 1) * 1000 + roundi(1000 * fraction), total * 1000)
 	if not _madmom_download_dialog.visible:
-		_madmom_download_dialog.popup_centered_clamped(Vector2i(500, 165))
+		DialogLayout.present(_madmom_download_dialog, Vector2i(500, 165))
 
 func _hide_madmom_download() -> void:
 	if is_instance_valid(_madmom_download_dialog):
@@ -2384,7 +2401,7 @@ func _open_analysis_progress(options: Dictionary) -> void:
 	_analysis_dialog.theme = _ui_theme
 	var targets := _analysis_targets(options.get("tasks", []))
 	_show_analysis_stage("准备分析 " + targets if not targets.is_empty() else "准备分析音频", 0, 0)
-	_analysis_dialog.popup_centered_clamped(Vector2i(450, 110))
+	DialogLayout.present(_analysis_dialog, Vector2i(450, 110))
 
 func _create_progress_window(title: String) -> Array:
 	var window := Window.new()
@@ -2392,11 +2409,15 @@ func _create_progress_window(title: String) -> Array:
 	window.visible = false
 	window.transient = true
 	window.exclusive = true
-	window.unresizable = true
+	window.min_size = Vector2i(260, 100)
 	host.add_child(window)
+	var scroll := ScrollContainer.new()
+	window.add_child(scroll)
+	scroll.follow_focus = true
+	scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var margin := MarginContainer.new()
-	window.add_child(margin)
-	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	scroll.add_child(margin)
+	margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	for side: String in ["top", "bottom", "left", "right"]:
 		margin.add_theme_constant_override("margin_" + side, 16)
 	var body := VBoxContainer.new()
@@ -2455,7 +2476,7 @@ func _show_analysis_feedback(title: String, details: String) -> void:
 	_message.dialog_text = title if details.is_empty() else title + "\n\n" + details
 	_message.dialog_autowrap = true
 	_message.get_ok_button().text = "确定"
-	_message.popup_centered_clamped(Vector2i(560, 160), 0.9)
+	DialogLayout.present(_message, Vector2i(560, 160))
 
 func _apply_spectrum_result(path: String, result: Dictionary) -> void:
 	_results_tabs.current_tab = 2
@@ -2582,7 +2603,7 @@ func _new_chart() -> void:
 		dialog.confirmed.connect(dialog.queue_free)
 		dialog.canceled.connect(dialog.queue_free)
 		host.add_child(dialog)
-		dialog.popup_centered()
+		DialogLayout.present(dialog, Vector2i(440, 145))
 	else:
 		_clear_chart()
 
@@ -2611,4 +2632,4 @@ func _notify(text: String) -> void:
 		return
 	_message.title = "更好的制谱器"
 	_message.dialog_text = text
-	_message.popup_centered()
+	DialogLayout.present(_message, Vector2i(480, 150))

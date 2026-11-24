@@ -1,5 +1,7 @@
 extends Node
 
+const DialogLayout := preload("res://desktop/dialog_layout.gd")
+
 const Agent := preload("res://desktop/chart_agent.gd")
 const Plan := preload("res://desktop/auto_chart_plan.gd")
 const AnimationDraft := preload("res://desktop/agent_animation.gd")
@@ -54,7 +56,7 @@ func _import_reference(path: String) -> void:
 		dialog.queue_free())
 	dialog.canceled.connect(dialog.queue_free)
 	_workspace.host.add_child(dialog)
-	dialog.popup_centered_clamped(Vector2i(520, 230))
+	DialogLayout.present(dialog, Vector2i(520, 230))
 
 func _save_reference(path: String, images: bool, audio: bool) -> void:
 	var result := References.import_local(path, images, audio)
@@ -75,7 +77,7 @@ func _confirm_script(path: String) -> void:
 		_workspace.host.add_child(_approval)
 	_approval.theme = _workspace._ui_theme
 	_approval.dialog_text = "请确认你信任这个脚本。它将以当前用户权限运行。\n\n" + path
-	_approval.popup_centered_clamped(Vector2i(560, 180))
+	DialogLayout.present(_approval, Vector2i(560, 180))
 
 func _run_selected() -> void:
 	if _active:
