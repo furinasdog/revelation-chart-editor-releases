@@ -1,7 +1,9 @@
 extends RefCounted
 
 const BASE := preload("res://main/ui_theme.tres")
+const MENU_FONT_SIZE := 13
 const DARK := {
+	"menu": Color("#171d28"), "heading": Color("#202734"),
 	"base": Color("#11151c"), "surface": Color("#202734"), "panel": Color("#171d27"),
 	"ink": Color("#e0e7f2"), "muted": Color("#a9b6c9"), "line": Color("#344155"),
 	"accent": Color("#7bbcff"), "selected": Color("#294d72"), "beat": Color("#3d83ba"),
@@ -9,6 +11,7 @@ const DARK := {
 	"playhead": Color("#ff8585"),
 }
 const LIGHT := {
+	"menu": Color("#cbd6e3"), "heading": Color("#e0e8f1"),
 	"base": Color("#e7edf4"), "surface": Color("#f8fafd"), "panel": Color("#edf2f8"),
 	"ink": Color("#15253a"), "muted": Color("#445a72"), "line": Color("#b9c7d7"),
 	"accent": Color("#125b9e"), "selected": Color("#c9e3fd"), "beat": Color("#2576ad"),
@@ -16,6 +19,7 @@ const LIGHT := {
 	"playhead": Color("#b53142"),
 }
 const GRAY := {
+	"menu": Color("#282828"), "heading": Color("#454545"),
 	"base": Color("#242424"), "surface": Color("#383838"), "panel": Color("#2d2d2d"),
 	"ink": Color("#f1f1f1"), "muted": Color("#bababa"), "line": Color("#535353"),
 	"accent": Color("#8ab8f8"), "selected": Color("#3b526d"), "beat": Color("#5599cf"),
@@ -53,14 +57,18 @@ static func make() -> Theme:
 		_font = SystemFont.new()
 		_font.font_names = PackedStringArray(["Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", "PingFang SC"])
 		_font.hinting = TextServer.HINTING_NORMAL
-		_font.subpixel_positioning = TextServer.SUBPIXEL_POSITIONING_DISABLED
+		_font.subpixel_positioning = TextServer.SUBPIXEL_POSITIONING_AUTO
 	result.default_font = _font
 	result.default_font_size = 14
 	for kind in ["Button", "CheckBox", "LineEdit", "OptionButton", "TextEdit"]:
 		result.set_font_size("font_size", kind, 14)
 	result.set_type_variation("DesktopMenuPopup", "PopupMenu")
-	result.set_font_size("font_size", "DesktopMenuPopup", 16)
+	result.set_font_size("font_size", "DesktopMenuPopup", result.default_font_size)
 	result.set_constant("v_separation", "DesktopMenuPopup", 8)
+	result.set_type_variation("DesktopTopMenu", "MenuButton")
+	result.set_type_variation("DesktopCommandPopup", "DesktopMenuPopup")
+	for kind in ["DesktopTopMenu", "DesktopCommandPopup"]:
+		result.set_font_size("font_size", kind, MENU_FONT_SIZE)
 	for kind in result.get_type_list():
 		for name in result.get_stylebox_list(kind):
 			var box := result.get_stylebox(name, kind) as StyleBoxFlat
@@ -114,12 +122,21 @@ static func make() -> Theme:
 				brush.border_width_bottom = 2
 				brush.border_color = tone("accent")
 		result.set_stylebox(state, "TimelineBrush", brush)
-	var inspector_panel := result.get_stylebox("panel", "TabContainer").duplicate() as StyleBox
+	var inspector_panel := result.get_stylebox("panel", "TabContainer").duplicate() as StyleBoxFlat
+	if light or gray:
+		inspector_panel.bg_color = tone("surface")
 	inspector_panel.content_margin_left = 10.0
 	inspector_panel.content_margin_top = 8.0
 	inspector_panel.content_margin_right = 10.0
 	result.set_type_variation("DesktopInspectorTabs", "TabContainer")
 	result.set_stylebox("panel", "DesktopInspectorTabs", inspector_panel)
+	var about_panel := result.get_stylebox("panel", "TabContainer").duplicate() as StyleBoxFlat
+	about_panel.content_margin_left = 18
+	about_panel.content_margin_right = 18
+	about_panel.content_margin_top = 12
+	about_panel.content_margin_bottom = 12
+	result.set_type_variation("DesktopAboutTabs", "TabContainer")
+	result.set_stylebox("panel", "DesktopAboutTabs", about_panel)
 	result.set_stylebox("read_only", "LineEdit", result.get_stylebox("normal", "LineEdit"))
 	result.set_color("font_uneditable_color", "LineEdit", tone("muted"))
 	for pair in [["panel", "PopupMenu"], ["panel", "PopupPanel"], ["panel", "AcceptDialog"], ["embedded_border", "Window"],

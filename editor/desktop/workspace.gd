@@ -17,6 +17,7 @@ const ReferenceMode = preload("res://main/chart_data.gd").ReferenceMode
 const ToolPalette := preload("res://desktop/tool_palette.gd")
 const NumberDrag := preload("res://desktop/number_drag.gd")
 const VideoExport := preload("res://desktop/video_export.gd")
+const VideoExportDialog := preload("res://desktop/video_export_dialog.gd")
 const Onboarding := preload("res://desktop/onboarding.gd")
 const AnalysisPanel := preload("res://desktop/analysis_panel.gd")
 const MelodyPlot := preload("res://desktop/melody_plot.gd")
@@ -32,7 +33,7 @@ const McpWorkspace := preload("res://desktop/mcp_workspace.gd")
 const ScriptWorkspace := preload("res://desktop/script_workspace.gd")
 const ChartStorage := preload("res://desktop/chart_storage.gd")
 const STARTUP_SOUND := preload("res://desktop/startup.wav")
-const BAR := 38.0
+const BAR := 32.0
 const SECTION := 36.0
 const TIP_BAR_HEIGHT := 36.0
 const GAP := 5.0
@@ -119,6 +120,7 @@ var _event_tools: MenuButton
 var _tool_entries: Array
 var _palette: Control
 var _video: Node
+var _video_settings: VideoExportDialog
 var _video_progress: AcceptDialog
 var _video_meter: ProgressBar
 var _onboarding: Control
@@ -150,6 +152,7 @@ var _about: Window
 var _release_dialog: AcceptDialog
 var _feature_finder: Window
 var _empty: CenterContainer
+var _continue_draft: Button
 var _chart_file: DesktopFileDialog
 var _save_folder: DesktopFileDialog
 var _save_folder_generation := -1
@@ -178,6 +181,7 @@ var _file_feedback := ""
 var _file_feedback_until := 0
 var _loop_switch: CheckButton
 var _loop_range := Vector2(-1, -1)
+var _phrase_action: Button
 var _loop_seek := false
 var _audition := false
 var _audition_last_ms := -1.0
@@ -191,6 +195,10 @@ func _ready() -> void:
 
 func attach(editor: Control) -> void:
 	host = editor
+	# Embedded windows already render at display resolution. Keep their glyphs intact
+	# when compositing, while the workspace and preview keep their normal filtering.
+	host.get_window().canvas_item_default_texture_filter = Viewport.DEFAULT_CANVAS_ITEM_TEXTURE_FILTER_NEAREST
+	host.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	chart = host.chart_data
 	sidebar = host.left_panel
 	preview = host.preview_area
@@ -270,6 +278,7 @@ func attach(editor: Control) -> void:
 	chart.background_animations_changed.connect(_refresh_background_selection)
 	chart.rt_playback_changed.connect(_play_state_changed)
 	grid.time_range_selected.connect(_set_loop_range)
+	grid.notes_menu_requested.connect(_open_note_menu)
 	grid.background_clip_selected.connect(_select_background_clip)
 	preview.resolve_place_time = grid.time_at_playhead
 	host.resized.connect(apply_layout)
@@ -328,12 +337,13 @@ func _button(label: String, action: Callable) -> Button:
 
 func _add_menu(row: HBoxContainer, label: String, items: Array) -> PopupMenu:
 	var button := MenuButton.new()
+	button.theme_type_variation = &"DesktopTopMenu"
 	button.text = label
 	button.flat = true
 	button.switch_on_hover = true
 	row.add_child(button)
 	var popup := button.get_popup()
-	popup.theme_type_variation = &"DesktopMenuPopup"
+	popup.theme_type_variation = &"DesktopCommandPopup"
 	for item: Array in items:
 		var id := popup.item_count
 		if item.is_empty():
@@ -351,6 +361,9 @@ func _add_menu(row: HBoxContainer, label: String, items: Array) -> PopupMenu:
 
 func _build_menu() -> void:
 	_menu = _box("DesktopMenu", Color("#171d28"))
+	var bar_style := _menu.get_theme_stylebox("panel") as StyleBoxFlat
+	bar_style.content_margin_top = 2
+	bar_style.content_margin_bottom = 2
 	var row := HBoxContainer.new()
 	_menu.add_child(row)
 	_add_menu(row, "文件", [
@@ -371,6 +384,7 @@ func _build_menu() -> void:
 		["切换自动滚屏", func(): chart.auto_scroll_enabled = not chart.auto_scroll_enabled],
 		["刷新谱面", chart.force_refresh, "refresh"],
 		["切换边缘滚动", func(): grid.edge_scroll_enabled = not grid.edge_scroll_enabled],
+		["手序与引导预览…", _open_hand_guide],
 	])
 	_add_menu(row, "分析", [
 		["自动抓音设置", _open_analysis_settings],
@@ -386,6 +400,7 @@ func _build_menu() -> void:
 	_copilot_menu.set_item_as_checkable(_copilot_item, true)
 	_add_menu(row, "帮助", [["功能速查…", _open_feature_finder], ["首次设置…", _onboarding.open],
 		["首次制谱教程…", _onboarding.open_beginner], ["原版迁移引导…", _onboarding.open_migration],
+		["8 拍练习谱…", _open_practice],
 		[], ["版本更新公告…", _open_release_notes], ["导出错误包…", _open_diagnostic_export], ["关于更好的制谱器…", _open_about]])
 	_audio_label = _label("未导入音频", 13)
 	_audio_label.mouse_filter = Control.MOUSE_FILTER_PASS
@@ -484,6 +499,51 @@ func _export_diagnostic_bundle(path: String) -> Error:
 		diagnostics.record("diagnostics.export", {"error": error_string(status)}, "error")
 	_notify("错误包已导出。请检查后随反馈发送。" if status == OK else "错误包导出失败（%s）。" % error_string(status))
 	return status
+
+func _open_note_menu(time_ms: int, lane: int, note_id: int) -> void:
+	if note_id >= 0 and note_id not in chart.selected_note_ids: chart.select_note(note_id)
+	var menu := PopupMenu.new()
+	host.add_child(menu)
+	for caption in ["复制", "粘贴", "复制为 JSON（跨工程）", "粘贴 JSON（跨工程）", "让助手修改此段", "删除此音符", "手序与引导预览"]:
+		menu.add_item(caption)
+	for index in [0, 2]: menu.set_item_disabled(index, chart.selected_note_ids.is_empty())
+	menu.set_item_disabled(5, note_id < 0)
+	menu.set_item_disabled(6, chart.selected_note_ids.is_empty())
+	menu.set_item_disabled(1, chart.clipboard_notes.is_empty())
+	menu.set_item_disabled(4, _loop_range.y <= _loop_range.x)
+	menu.index_pressed.connect(_note_menu_action.bind(time_ms, lane, note_id))
+	menu.popup_hide.connect(menu.queue_free)
+	menu.position = Vector2i(host.get_viewport().get_mouse_position())
+	menu.popup()
+
+func _note_menu_action(index: int, time_ms: int, lane: int, note_id: int) -> void:
+	var exchange := preload("res://desktop/note_exchange.gd")
+	match index:
+		0: chart.clip_copy_selected()
+		1, 3: _notify(exchange.paste(chart, time_ms, lane, index == 3))
+		2:
+			DisplayServer.clipboard_set(exchange.copy(chart))
+			_notify("已将音符 JSON 复制到系统剪贴板。")
+		4: _open_phrase_edit()
+		5: chart.remove_note(note_id)
+		6: _open_hand_guide()
+
+func _open_phrase_edit() -> void:
+	_set_copilot_visible(true)
+	copilot.prepare_selection(_loop_range)
+
+func _open_hand_guide() -> void:
+	if chart.selected_note_ids.is_empty():
+		_notify("先选中要检查的音符。")
+		return
+	var guide := preload("res://desktop/hand_guide.gd").new()
+	host.add_child(guide)
+	guide.open_for(chart, chart.selected_note_id)
+
+func _open_practice(step := 0) -> void:
+	var practice := preload("res://desktop/practice_chart.gd").new()
+	host.add_child(practice)
+	practice.open_lesson(step)
 
 func _restore_previous_session() -> void:
 	if sidebar.restore_last_session():
@@ -829,6 +889,9 @@ func _build_tool_rail(row: Container) -> void:
 	_background_toggle.toggle_mode = true
 	_background_toggle.tooltip_text = "显示与音符共用拍尺的底图、遮罩和背景动画轨"
 	tools.add_child(_background_toggle)
+	_phrase_action = _button("让助手修改此段", _open_phrase_edit)
+	tools.add_child(_phrase_action)
+	_phrase_action.hide()
 
 func _choose_tool(id: int) -> void:
 	if _tools.has(id):
@@ -1153,12 +1216,16 @@ func _build_empty() -> void:
 	column.add_child(start)
 	start.add_child(_button("从音频开始制谱", _open_audio_dialog))
 	start.add_child(_button("打开已有谱面", _open_chart_dialog))
+	_continue_draft = _button("继续上次编辑", _restore_previous_session)
+	column.add_child(_continue_draft)
 	host.add_child(_empty)
 	_refresh_empty()
 
 func _refresh_empty(_id := -1) -> void:
 	if _empty:
 		_empty.visible = not grid.background_track_visible and chart.audio_path.is_empty() and chart.notes.is_empty() and chart.events.is_empty()
+		if _empty.visible:
+			_continue_draft.visible = sidebar.has_saved_session()
 	_refresh_tip()
 
 func _build_tips() -> void:
@@ -1263,6 +1330,7 @@ func _open_chart_file(path: String) -> bool:
 	_document_generation += 1
 	_refresh_audio()
 	_fit_timeline()
+	_set_loop_range(Vector2(-1, -1))
 	return true
 
 func _splitter(horizontal: bool, co_pilot := false) -> ColorRect:
@@ -1441,7 +1509,11 @@ func _apply_theme() -> void:
 	_inspector_divider.color = EditorTheme.tone("line")
 	_timeline_divider.color = EditorTheme.tone("line")
 	_copilot_divider.color = EditorTheme.tone("line")
-	for panel: Control in [_menu, _track_bar, _inspector_heading, _rail, _result_heading, _result, _frequency, _emotion_panel, _tips_bar,
+	_menu.get_theme_stylebox("panel").bg_color = EditorTheme.tone("menu")
+	for heading: Control in [_inspector_heading, _result_heading]:
+		var header_style := heading.get_theme_stylebox("panel") as StyleBoxFlat
+		header_style.bg_color = EditorTheme.tone("heading")
+	for panel: Control in [_track_bar, _rail, _result, _frequency, _emotion_panel, _tips_bar,
 			_empty.get_child(0)]:
 		var style := panel.get_theme_stylebox("panel") as StyleBoxFlat
 		style.bg_color = EditorTheme.surface(panel.get_meta("theme_surface"))
@@ -1454,7 +1526,7 @@ func _apply_theme() -> void:
 	copilot.apply_theme()
 	mcp.apply_theme(_ui_theme)
 	_onboarding.apply_theme(_ui_theme)
-	for dialog: Window in [_about, _file, _lyrics_file, _image_file, _chart_file, _ask, _message, _video_progress, _release_dialog]:
+	for dialog: Window in [_about, _file, _lyrics_file, _image_file, _chart_file, _ask, _message, _video_settings, _video_progress, _release_dialog]:
 		if dialog:
 			dialog.theme = _ui_theme
 	if _feature_finder:
@@ -1513,6 +1585,7 @@ func _play_at(time: float) -> void:
 
 func _set_loop_range(value: Vector2) -> void:
 	_loop_range = value
+	if _phrase_action: _phrase_action.visible = value.y > value.x
 	grid.loop_range_ms = value
 	grid.queue_redraw()
 
@@ -1720,6 +1793,9 @@ func _setup_input() -> void:
 
 	_video = VideoExport.new()
 	add_child(_video)
+	_video.stage_changed.connect(func(message: String):
+		if is_instance_valid(_video_progress):
+			_video_progress.dialog_text = message)
 	_video.progress.connect(func(done: int, total: int):
 		if is_instance_valid(_video_meter):
 			_video_meter.max_value = total
@@ -1745,22 +1821,21 @@ func _choose_video_path() -> void:
 	if chart.audio_duration_ms <= 0:
 		_notify("请先导入音频。")
 		return
-	var dialog := _create_path_dialog("渲染视频", FileDialog.FILE_MODE_SAVE_FILE, ["*.mp4 ; 视频文件"])
-	dialog.current_file = "谱面预览.mp4"
-	dialog.file_selected.connect(_start_video_export)
-	dialog.file_selected.connect(func(_path: String): dialog.queue_free())
-	dialog.canceled.connect(dialog.queue_free)
-	host.add_child(dialog)
-	dialog.open_picker()
+	if not is_instance_valid(_video_settings):
+		_video_settings = VideoExportDialog.new()
+		_video_settings.theme = _ui_theme
+		host.add_child(_video_settings)
+		_video_settings.requested.connect(_start_video_export)
+	_video_settings.open_for(chart)
 
-func _start_video_export(path: String) -> void:
+func _start_video_export(path: String, from_ms := 0, to_ms := -1, options := {}) -> void:
 	if _video.busy:
 		return
 	diagnostics.record("video.render")
 	if not is_instance_valid(_video_progress):
 		_video_progress = AcceptDialog.new()
 		_video_progress.title = "正在渲染视频"
-		_video_progress.dialog_text = "正在按预览效果渲染 1080p 视频"
+		_video_progress.theme = _ui_theme
 		_video_progress.ok_button_text = "取消渲染"
 		_video_progress.exclusive = true
 		_video_progress.confirmed.connect(_video.cancel)
@@ -1770,11 +1845,12 @@ func _start_video_export(path: String) -> void:
 		_video_progress.add_child(_video_meter)
 		host.add_child(_video_progress)
 	_video_meter.value = 0
+	_video_progress.dialog_text = "正在准备渲染…"
 	DialogLayout.present(_video_progress, Vector2i(420, 115))
 	_video.finished.connect(func(error: String):
 		if error.is_empty():
 			DesktopFileDialog.reveal_export(path), CONNECT_ONE_SHOT)
-	_video.render(chart, analysis._ffmpeg(preferences.ffmpeg_path), path)
+	_video.render(chart, analysis._ffmpeg(preferences.ffmpeg_path), path, from_ms, to_ms, options)
 
 func import_dropped_files(paths: PackedStringArray) -> void:
 	var zip_path := ""
@@ -1832,16 +1908,12 @@ func _get_or_create_root() -> String:
 	return ProjectSettings.globalize_path(chart._root_dir)
 
 func _save_chart() -> void:
-	if not chart.has_root_dir or ChartStorage.is_working_folder(chart.get_root_dir()):
+	if not chart.has_root_dir:
 		_choose_chart_save_folder()
 	else:
 		sidebar._save_to_current_file()
 
 func _choose_chart_save_folder() -> void:
-	var required: String = sidebar._check_required_fields()
-	if not required.is_empty():
-		sidebar._show_ie_status(required, Color(1.0, 0.5, 0.3))
-		return
 	if chart.has_root_dir and not ChartStorage.is_working_folder(chart.get_root_dir()):
 		_save_folder.current_dir = ProjectSettings.globalize_path(chart.get_root_dir()).get_base_dir()
 	_save_folder_generation = _document_generation
@@ -1854,10 +1926,6 @@ func _on_chart_save_folder_selected(folder: String) -> void:
 		_save_chart_in_folder(folder)
 
 func _save_chart_in_folder(folder: String) -> bool:
-	var required: String = sidebar._check_required_fields()
-	if not required.is_empty():
-		sidebar._show_ie_status(required, Color(1.0, 0.5, 0.3))
-		return false
 	var result := ChartStorage.save_copy(chart, folder)
 	if result.has("error"):
 		sidebar._show_ie_status(str(result.error), Color.RED)
@@ -1867,6 +1935,7 @@ func _save_chart_in_folder(folder: String) -> bool:
 	chart.set_root_dir_quiet(file.get_base_dir())
 	chart._root_json_name = file.get_file()
 	sidebar.imported_file_path = file
+	chart.project_cache.remember(file, chart.to_export_dict(), chart.bpm_segments)
 	sidebar._save_session_state("import")
 	chart.settings_changed.emit()
 	chart.force_refresh()
@@ -2009,6 +2078,7 @@ func import_audio(path: String, ask: bool = true, find_lyrics := true) -> bool:
 		return false
 	_document_generation += 1
 	chart.set_rhythm_analysis({})
+	_set_loop_range(Vector2(-1, -1))
 	chart.set_audio_path(name)
 	diagnostics.record("audio.imported", {"duration_ms": roundi(chart.audio_duration_ms)})
 	if chart.chart_info.get("chartName", "").is_empty():

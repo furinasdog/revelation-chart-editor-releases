@@ -31,6 +31,8 @@ var track_count: int
 var difficulty: String
 var profile: Dictionary
 var _chart: Node
+var edit_span := Vector2(-1, -1)
+var additions_only := false
 
 func _init(chart: Node, level := "HD") -> void:
 	_chart = chart
@@ -169,6 +171,13 @@ func edit(action: String, rows: Variant) -> Dictionary:
 		if clean.has("error"):
 			return clean
 		pending[id] = clean
+	if edit_span.y > edit_span.x:
+		for id: int in pending:
+			if additions_only and _chart.notes.has(id):
+				return {"error": "此段要求保留已有音符，只能新增。"}
+			for row: Variant in [notes.get(id), pending[id]]:
+				if row is Dictionary and (row.time_ms - row.lead_ms < edit_span.x or row.time_ms >= edit_span.y or row.time_ms + row.duration_ms > edit_span.y):
+					return {"error": "音符的出现、判定与长键结束都须位于选区内。", "range_ms": [edit_span.x, edit_span.y]}
 	for id: int in pending:
 		if pending[id] == null:
 			notes.erase(id)
@@ -202,6 +211,8 @@ func _validate_note(row: Dictionary, id: int) -> Dictionary:
 			return {"error": "长键从判定到松开的时间须为 %d–%d 毫秒且不能越过曲尾。" % [min_hold, max_hold]}
 	var clean := {"id": id, "type": kind, "time_ms": time, "lane": lane, "x": float(row.x), "y": float(row.y),
 		"duration_ms": roundi(length) if kind == "hold" else 0}
+	if row.has("lead_ms") and (not _number(row.lead_ms) or row.lead_ms < 0 or (is_new and row.lead_ms > time)):
+		return {"error": "预告时长须为非负毫秒数，且新音符不能在曲首之前出现。"}
 	if row.get("lead_changed", false):
 		var lead: Variant = row.get("lead_ms")
 		if not _number(lead) or lead < profile.min_lead_ms or lead > 3500 or lead > time:

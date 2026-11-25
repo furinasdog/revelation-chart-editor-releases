@@ -10,12 +10,13 @@ func _run() -> void:
 	await scene_changed
 	await process_frame
 	var desktop: Node = current_scene.desktop
+	var theme_ok := _check_workspace_theme(desktop)
 	var display := Vector2i(1366, 728)
 	var scale: float = desktop._automatic_scale(display, display)
 	var font_size: int = desktop._ui_theme.default_font_size
 	var actual_pixels := roundi(font_size * scale)
 	print("DISPLAY_1366 ", scale, " scale, ", actual_pixels, " physical px")
-	var passed := scale == 1.0 and actual_pixels >= 14
+	var passed := theme_ok and scale == 1.0 and actual_pixels >= 14
 	var large := Vector2i(3840, 2160)
 	var hi_dpi: float = desktop._automatic_scale(large, large, 192)
 	var same_size_standard: float = desktop._automatic_scale(large, large, 96)
@@ -44,6 +45,31 @@ func _run() -> void:
 	if not passed:
 		push_error("Display scaling, inspector layout or tutorial interaction failed.")
 	quit(0 if passed else 1)
+
+func _check_workspace_theme(desktop: Node) -> bool:
+	var original: String = desktop.preferences.theme_mode
+	var ok := true
+	for mode in ["light", "gray", "dark"]:
+		desktop.preferences.set_theme_mode(mode)
+		var menu: Color = desktop._menu.get_theme_stylebox("panel").bg_color
+		var header: Color = desktop._inspector_heading.get_theme_stylebox("panel").bg_color
+		var preview_header: Color = desktop._result_heading.get_theme_stylebox("panel").bg_color
+		var body: Color = desktop._tabs.get_theme_stylebox("panel").bg_color
+		var distinct := menu != header and header == preview_header and header != body
+		if not distinct:
+			push_error("%s workspace layers: menu %s, headers %s/%s, form %s" % [mode, menu, header, preview_header, body])
+			ok = false
+		for item in desktop._menu.get_child(0).get_children():
+			if item is MenuButton:
+				var size: int = item.get_theme_font_size("font_size")
+				if size != 13 or size != item.get_popup().get_theme_font_size("font_size"):
+					push_error("%s menu title and commands should both be 13" % item.text)
+					ok = false
+		if desktop._menu.size.y != 32 or desktop._menu.get_global_rect().end.y != desktop._inspector_heading.get_global_rect().position.y:
+			push_error("Compact menu bar does not meet the inspector header")
+			ok = false
+	desktop.preferences.set_theme_mode(original)
+	return ok
 
 func _check_inspector_forms(desktop: Node) -> bool:
 	var sidebar: Control = desktop.sidebar

@@ -215,7 +215,7 @@ namespace RevelationHub
                 var asset = "Revelation-Editor-v" + r.version + "-Windows-x64.zip";
                 var github = "https://github.com/" + Repository + "/releases/download/v" + r.version + "/" + asset;
                 string archive = Path.Combine(scratch, "download.zip");
-                string[] sources = { github, Proxy + github, "https://ghfast.top/" + github };
+                string[] sources = DownloadSource.GitHubAsset(github);
                 await new PackageDownload(client, sources, r, progress).Fetch(archive, ct).ConfigureAwait(false);
                 progress.Report(new Transfer("正在安装"));
                 await Task.Run(() => Extract(archive, unpacked, ct), ct).ConfigureAwait(false);

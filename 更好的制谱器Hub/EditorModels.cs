@@ -99,7 +99,7 @@ internal sealed class EditorModels(EditorProfile profile,HttpClient http)
         } finally {Directory.Delete(staging,true);}
     }
     private Task Download(string url,string dest,Release r,IProgress<Transfer> p,CancellationToken ct)=>
-        new PackageDownload(http,new[]{url,"https://gh-proxy.org/"+url,"https://ghfast.top/"+url},r,p).Fetch(dest,ct);
+        new PackageDownload(http, DownloadSource.GitHubAsset(url), r, p).Fetch(dest, ct);
     internal void Remove(string model)
     {
         string root=Location(model);CheckPath(root);if(!Directory.Exists(root)) return;

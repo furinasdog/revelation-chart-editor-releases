@@ -81,6 +81,10 @@ internal partial class Program
     }
     static async Task Main(string[] args)
     {
+        if (args is ["--downloads"]) { await CheckDownloads(); return; }
+        if (args is ["--upgrade", var previousVersion, var previousZip, var version, var full, var patch])
+        { await CheckUpgrade(previousVersion, previousZip, version, full, patch); return; }
+        if (args is ["--cuda", var descriptor, var addon]) { await CheckCuda(descriptor,addon); return; }
         if (args is ["--layout", var output]) { await CheckLayout(output);return; }
         if (args is ["--notices", var captures]) { await CheckLayout(captures,noticesOnly:true);return; }
         if (args is ["--layout", var screenshots, var editorDirectory]) { await CheckLayout(screenshots,editorDirectory);return; }

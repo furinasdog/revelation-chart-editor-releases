@@ -3,7 +3,8 @@ param(
     [Parameter(Mandatory)][version]$Version,
     [Parameter(Mandatory)][string]$KeyFile,
     [Parameter(Mandatory)][string]$Notes,
-    [ValidateSet('editor','hub')][string]$Product='editor'
+    [ValidateSet('editor','hub','cuda')][string]$Product='editor',
+    [string]$DescriptorDirectory
 )
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Security
@@ -13,6 +14,11 @@ $isHub = $Product -eq 'hub'
 $catalogPath = Join-Path $PSScriptRoot $(if ($isHub) { 'hub-update.signed.json' } else { 'catalog.signed.json' })
 $source = Get-Item -LiteralPath $Archive
 $expected = if ($isHub) { "Revelation-Hub-v$Version-x64.msi" } else { "Revelation-Editor-v$Version-Windows-x64.zip" }
+if ($Product -eq 'cuda') {
+    if (-not $DescriptorDirectory) { throw 'Specify the staged editor directory for its CUDA descriptor.' }
+    $catalogPath = Join-Path $DescriptorDirectory 'cuda-addon.signed.json'
+    $expected = "Revelation-Editor-v$Version-CUDA-Windows-x64.zip"
+}
 if ($source.Name -cne $expected) { throw 'Unexpected asset name' }
 $crypto = New-Object Security.Cryptography.RSACryptoServiceProvider(3072)
 $crypto.PersistKeyInCsp = $false
@@ -31,7 +37,7 @@ try {
     $public = $crypto.ToXmlString($false)
     if ((Test-Path -LiteralPath $publicPath) -and [IO.File]::ReadAllText($publicPath) -cne $public) { throw 'Publisher key mismatch' }
     $records = @()
-    if (Test-Path -LiteralPath $catalogPath) {
+    if ($Product -ne 'cuda' -and (Test-Path -LiteralPath $catalogPath)) {
         $old = [IO.File]::ReadAllText($catalogPath) | ConvertFrom-Json
         $bytes = [Convert]::FromBase64String($old.payload)
         if (!$crypto.VerifyData($bytes,'SHA256',[Convert]::FromBase64String($old.signature))) { throw 'Invalid existing catalog' }

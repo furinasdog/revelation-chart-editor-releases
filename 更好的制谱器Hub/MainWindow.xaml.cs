@@ -174,7 +174,7 @@ namespace RevelationHub
             try { Process.Start(new ProcessStartInfo(library.Versions) { UseShellExecute = true }); }
             catch (Exception ex) { Message(ex.Message, true); }
         }
-        private sealed record CardView(string Notes,string Date,long Size,string Hash,bool Present,bool Installed,string Update);
+        private sealed record CardView(string Notes,string Date,long Size,string Hash,bool Present,bool Installed,string Update,CudaSupport Cuda);
         private readonly Dictionary<string,(CardView View,Border Card)> displayed = new();
         private void Render()
         {
@@ -190,7 +190,8 @@ namespace RevelationHub
             {
                 var r=rows[i];bool present=local.Contains(r.version);
                 var upgrade=present?available.FirstOrDefault(x=>Version.Parse(x.version)>Version.Parse(r.version) && !local.Contains(x.version)):null;
-                var view=new CardView(r.notes,r.date,r.size,r.sha256,present,present && library.Installed(r.version),upgrade?.version);
+                bool installed = present && library.Installed(r.version);
+                var view=new CardView(r.notes,r.date,r.size,r.sha256,present,installed,upgrade?.version,installed ? library.CudaFor(r.version) : null);
                 bool exists=displayed.TryGetValue(r.version,out var prior);
                 if(!exists || prior.View!=view)
                 {
@@ -224,7 +225,7 @@ namespace RevelationHub
             var bottom = new DockPanel { Margin=new Thickness(0,14,0,0) };
             DockPanel.SetDock(action,Dock.Right); bottom.Children.Add(action);
             var secondary = new StackPanel { VerticalAlignment=VerticalAlignment.Center };
-            if (view.Present) AddMaintenanceButtons(secondary,r,upgrade);
+            if (view.Present) AddMaintenanceButtons(secondary,r,upgrade,view.Cuda);
             bottom.Children.Add(secondary);
             action.Click += async (_, __) => {
                 if (installed) await ToggleEditor(r.version);

@@ -11,7 +11,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 ROOT = Path(__file__).resolve().parents[1]
 APP = "更好的制谱器"
-DOCS = ["README.md", "LICENSE", "THIRD_PARTY.md", "CONTRIBUTING.md", "新手教程.md", "功能与入口说明.md"]
+DOCS = ["README.md", "LICENSE", "THIRD_PARTY.md", "CONTRIBUTING.md", "功能与入口说明.md"]
 COMPONENTS = ["revelation_rhythm.dll", "onnxruntime.dll", "revelation-essentia.exe",
               "revelation-madmom.exe", "revelation-music2emo.exe", "revelation-rmvpe.exe"]
 
@@ -46,6 +46,9 @@ def create(export, deps, output):
         with ZipFile(work / archives[0], "w", ZIP_DEFLATED, compresslevel=5) as z:
             for name, target in [("game.exe", APP + ".exe"), ("game.pck", APP + ".pck"), *[(c, c) for c in COMPONENTS]]:
                 z.write(export / name, app / target)
+            descriptor = export / "cuda-addon.signed.json"
+            if descriptor.is_file():
+                z.write(descriptor, app / descriptor.name)
             for name in ["msvcp140.dll", "msvcp140_1.dll", "vcruntime140.dll", "vcruntime140_1.dll"]:
                 z.write(deps / name, app / name)
             for name in ["python.exe","python313.zip"]:
@@ -61,8 +64,9 @@ def create(export, deps, output):
             for name in ["cli.py", "rpy.py", "worker.py", "mcp_stdio.py"]:
                 z.write(ROOT / "runtime" / name, app / "runtime" / name)
             z.write(ROOT / "runtime/revelation.cmd", app / "revelation.cmd")
-            for name in ["LICENSE", "THIRD_PARTY.md", "README.md", "新手教程.md", "功能与入口说明.md", "CONTRIBUTING.md"]:
+            for name in DOCS:
                 z.write(ROOT / name, app / name)
+            z.write(ROOT / "更好的制谱器Hub/guides/editor.md", app / "新手教程.md")
             add_tree(z, ROOT / "docs", app / "docs")
         with ZipFile(work / archives[1], "w", ZIP_DEFLATED, compresslevel=5) as z:
             for path in sources():

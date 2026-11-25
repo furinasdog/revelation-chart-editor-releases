@@ -32,7 +32,7 @@ static func save_copy(chart: Node, selected: String) -> Dictionary:
 		var relative := original.replace("\\", "/")
 		var resolved: String = chart.resolve_full_path(original)
 		if resolved.is_empty() or not FileAccess.file_exists(resolved):
-			return {"error": "找不到谱面引用的素材「%s」，请检查素材路径。" % original.get_file()}
+			continue
 		if relative.is_absolute_path() or not Archive.relative_name(relative):
 			var name := relative.get_file().validate_filename().left(120)
 			relative = "素材/%s-%s" % [original.sha256_text().left(12), name]

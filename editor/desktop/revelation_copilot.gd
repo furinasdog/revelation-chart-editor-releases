@@ -39,6 +39,11 @@ const VALUE_NAMES := {"note": "普通键", "drag": "滑键", "hold": "长键", "
 
 var busy := false
 var _workspace: Node
+var _selected_span := Vector2(-1, -1)
+var _span_generation := -1
+var _preserve := CheckBox.new()
+var _original_rows := {}
+var _comparison: ConfirmationDialog
 var _agent := Agent.new()
 var _scroll: ScrollContainer
 var _transcript: VBoxContainer
@@ -139,6 +144,9 @@ func setup(workspace: Node) -> void:
 	_auto_approve.tooltip_text = "读取直接执行。使用当前模型独立审查其他操作，超出要求时拒绝，不确定时请你确认。每次审查会调用一次模型。"
 	permissions.add_child(_auto_approve)
 	add_child(_reviewer)
+	_preserve.text = "仅新增，保留已有音符"
+	_preserve.hide()
+	body.add_child(_preserve)
 	_editor = TextEdit.new()
 	_editor.placeholder_text = "例如：把选中的长键延长半拍"
 	_editor.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
@@ -425,9 +433,25 @@ func _confirm_compose() -> void:
 func _submit() -> void:
 	_send_prompt(_editor.text.strip_edges())
 
+func prepare_selection(bounds: Vector2) -> void:
+	if busy or bounds.y <= bounds.x: return
+	_selected_span = bounds
+	_span_generation = _workspace._document_generation
+	_preserve.button_pressed = true
+	_preserve.show()
+	_editor.text = "请修改 %s–%s 秒的选区。" % [String.num(bounds.x/1000.0), String.num(bounds.y/1000.0)]
+	_editor.grab_focus()
+	_editor.select_all()
+
 func _send_prompt(text: String, difficulty := "") -> bool:
 	if busy or text.is_empty():
 		return false
+	if _span_generation != _workspace._document_generation or not difficulty.is_empty():
+		_selected_span = Vector2(-1,-1)
+		_preserve.hide()
+	if _selected_span.y > _selected_span.x:
+		text += "\n卷帘选区：%d–%d 毫秒，出现、判定和长键结束均须落在此段内，判定不含结束边界。" % [_selected_span.x, _selected_span.y]
+		if _preserve.button_pressed: text += " 只允许新增音符。"
 	if _workspace._analyzing or _workspace._video.busy:
 		_status.text = "请等待当前任务结束。"
 		_status.show()
@@ -491,6 +515,10 @@ func _prepare_draft(share: bool) -> void:
 	_project_signature = _signature(_original_chart)
 	var difficulty := _requested_difficulty if not _requested_difficulty.is_empty() else str(chart.chart_info.get("difficulty", "HD")).to_upper()
 	_plan = Plan.new(chart, difficulty)
+	if _selected_span.y > _selected_span.x:
+		_original_rows = _plan.notes.duplicate(true)
+		_plan.edit_span = _selected_span
+		_plan.additions_only = _preserve.button_pressed
 	var artwork: Array[Dictionary] = []
 	if share:
 		var first: String = _workspace.automatic._find_cover()
@@ -603,6 +631,10 @@ func _retry_request() -> void:
 func _request_approval(name: String, arguments: Dictionary) -> bool:
 	if not busy or _generation != _workspace._document_generation:
 		return false
+	if _selected_span.y > _selected_span.x and name not in ["finish", "add_notes", "move_notes", "delete_notes", "set_positions", "set_note_lead_in", "resize_holds", "set_hold_path"]:
+		return false
+	if _selected_span.y > _selected_span.x and _preserve.button_pressed and name not in ["finish", "add_notes"]:
+		return false
 	var operation_key := name + JSON.stringify(arguments)
 	if _refused_operations.has(operation_key):
 		_step_status.text = "已拒绝"
@@ -714,10 +746,63 @@ func _finish(success: bool, message: String, edits: Dictionary = {}) -> void:
 		_pending_edits["metadata"] = metadata
 	if success and _generation != _workspace._document_generation:
 		_apply_result(false, "当前工程已经切换。请在新工程中重新发送请求。")
+	elif success and _selected_span.y > _selected_span.x:
+		_review_segment(message)
 	elif success and _signature() != _project_signature:
 		_ask_conflict(message)
 	else:
 		_apply_result(success, message)
+
+func _review_segment(summary: String) -> void:
+	var added := 0
+	var changed := 0
+	var removed := 0
+	for id in _plan.edited:
+		var before: Dictionary = _original_rows.get(id, {})
+		var after: Dictionary = _plan.notes.get(id, {})
+		if before == after: continue
+		for entry in [before, after]:
+			if not entry.is_empty() and (entry.time_ms - entry.lead_ms < _selected_span.x or entry.time_ms >= _selected_span.y or entry.time_ms + entry.duration_ms > _selected_span.y):
+				_apply_result(false, "草稿包含超出选区的判定或长键，已保留原谱。")
+				return
+		if not before.is_empty() and _preserve.button_pressed:
+			_apply_result(false, "草稿改动了要求保留的音符，已保留原谱。")
+			return
+		if before.is_empty(): added += 1
+		elif after.is_empty(): removed += 1
+		else: changed += 1
+	if not _pending_edits.is_empty() or _animation.has_assets() or not _animation.layers.is_empty() or not _animation.mask_cues.is_empty() or _signature() != _project_signature:
+		_apply_result(false, "选区或工程内容已变化，请重新提交此段。")
+		return
+	_comparison = ConfirmationDialog.new()
+	_comparison.title = "选区改谱对比"
+	_comparison.ok_button_text = "接受草稿"
+	_comparison.cancel_button_text = "丢弃"
+	_comparison.exclusive = true
+	_workspace.host.add_child(_comparison)
+	var player := preload("res://desktop/chart_audition.gd").new()
+	player.name = "Audition"
+	_comparison.add_child(player)
+	var chart: Node = _workspace.chart
+	player.configure(chart, _selected_span)
+	chart.pause_rt_playback()
+	player.add_variant(chart)
+	var draft := player.add_variant(chart)
+	draft.chart.apply_automatic_notes(_plan.notes, _plan.edited, [], [], {}, {})
+	player.refresh_variant(0)
+	player.refresh_variant(1)
+	player.select(0, _selected_span.x)
+	var controls := HFlowContainer.new()
+	player.add_child(controls)
+	_make_button(controls, "循环试听原谱", player.select.bind(0, _selected_span.x, true))
+	_make_button(controls, "循环试听草稿", player.select.bind(1, _selected_span.x, true))
+	_make_button(controls, "暂停", player.pause)
+	_comparison.dialog_text = "%s – %s　新增 %d · 移动或调整 %d · 删除 %d" % [chart.ruler_clock(_selected_span.x),chart.ruler_clock(_selected_span.y),added,changed,removed]
+	_comparison.confirmed.connect(func():
+		if _generation == _workspace._document_generation and _signature() == _project_signature: _apply_result(true, summary)
+		else: _apply_result(false, "试听期间工程已变化，已保留当前谱面。"))
+	_comparison.canceled.connect(func(): _apply_result(false, "已丢弃选区草稿。"))
+	DialogLayout.present(_comparison, Vector2i(640,440))
 
 func _ask_conflict(message: String) -> void:
 	if not is_instance_valid(_conflict):
@@ -809,6 +894,14 @@ func cancel() -> void:
 	_clear_turn()
 
 func _clear_turn() -> void:
+	if is_instance_valid(_comparison):
+		_comparison.hide()
+		_comparison.queue_free()
+		_comparison = null
+	_original_rows.clear()
+	_selected_span = Vector2(-1, -1)
+	_preserve.hide()
+	_preserve.disabled = false
 	_review_scope.clear()
 	_review_settings.clear()
 	_accepted_operations.clear()
@@ -830,6 +923,7 @@ func _clear_turn() -> void:
 	_refresh_controls()
 
 func _refresh_controls() -> void:
+	_preserve.disabled = busy
 	_compose_button.disabled = busy
 	_send_button.disabled = busy or _editor.text.strip_edges().is_empty()
 	_stop_button.visible = busy

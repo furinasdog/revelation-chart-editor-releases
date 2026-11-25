@@ -1,8 +1,14 @@
 # 更好的制谱器 Hub
 
-Windows x64 版本管理器。下载并安装 Hub 后，可在「版本库」选择制谱器版本、查看下载进度和启动已安装的编辑器。[下载 Hub 安装器](https://github.com/furinasdog/revelation-chart-editor-releases/releases/download/hub-v1.3.2/Revelation-Hub-v1.3.2-x64.msi) · [所有版本](https://github.com/furinasdog/revelation-chart-editor-releases/releases)
+Windows x64 版本管理器。下载并安装 Hub 后，可在「版本库」选择制谱器版本、查看下载进度和启动已安装的编辑器。[下载 Hub 安装器](https://github.com/furinasdog/revelation-chart-editor-releases/releases/download/hub-v1.4.0/Revelation-Hub-v1.4.0-x64.msi) · [所有版本](https://github.com/furinasdog/revelation-chart-editor-releases/releases)
 
 Hub 使用 C#、WPF 和 .NET 10 LTS。安装器自带运行时。它优先从 GitHub 获取发行包，连接失败时尝试镜像，以发行签名和 SHA-256 校验内容。各编辑器版本独立安装，可离线启动。[Hub 源码及构建说明](更好的制谱器Hub/README.md)
+
+## Hub v1.4.0 与制谱器 v1.3.0
+
+Hub 支持最多 8 路并行下载，GitHub 或镜像连接中断时会尝试其他来源。制谱器默认安装 CPU 版，需要 GPU 推理时可在「启动 → 已安装」的版本卡片上添加 CUDA 支持。[Hub 发行说明](https://github.com/furinasdog/revelation-chart-editor-releases/releases/tag/hub-v1.4.0)
+
+制谱器新增草稿续编、分段 BPM 恢复、跨工程复制、选区改谱与试听对比、手序预览和 8 拍练习。视频导出可自定义分辨率、帧率和画质，并使用多线程并行渲染及 NVIDIA 硬件编码。已安装 v1.2.0 可在 Hub 原位增量更新。[制谱器发行说明](https://github.com/furinasdog/revelation-chart-editor-releases/releases/tag/v1.3.0)
 
 ## Hub v1.3.2
 

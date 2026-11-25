@@ -5,7 +5,7 @@
 #include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/packed_byte_array.hpp>
 #include <godot_cpp/variant/packed_float32_array.hpp>
-#include <onnxruntime_cxx_api.h>
+#include "onnx_backend.hpp"
 
 #include <algorithm>
 #include <array>
@@ -418,12 +418,13 @@ public:
         if (session_) return {};
         if (model.is_empty()) return "Beat This! ONNX model is missing";
         try {
+            revelation::onnx::initialize();
             static Ort::Env environment(ORT_LOGGING_LEVEL_WARNING, "Revelation");
             Ort::SessionOptions options;
             options.SetIntraOpNumThreads(4);
             options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
             options.DisableCpuMemArena();
-            session_ = std::make_unique<Ort::Session>(environment, model.ptr(), model.size(), options);
+            session_ = std::make_unique<Ort::Session>(revelation::onnx::session(environment, options, model.ptr(), model.size()));
             return {};
         } catch (const std::exception &error) {
             return String::utf8(error.what());

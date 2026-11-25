@@ -5,6 +5,7 @@ using System.IO.Compression;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using RevelationHub;
@@ -74,5 +75,29 @@ internal partial class Program
             Check(Guide.Chapters.Count>=20 && Guide.Chapters.Any(c=>c.Body.Contains("黄键")) && Guide.Chapters.Any(c=>c.Body.Contains("增量")),"Offline guides include both manuals and searchable chapters");
         }
         finally{temp.Delete(true);}
+    }
+
+    private static async Task CheckUpgrade(string oldVersion, string oldZip, string nextVersion, string full, string patch)
+    {
+        var temp = Directory.CreateTempSubdirectory("hub-release-upgrade-");
+        try
+        {
+            var routes = new LocalAssets(full, patch);
+            using var http = new HttpClient(routes);
+            var library = new Distribution(temp.FullName, http);
+            string slot = Path.Combine(library.Versions, oldVersion);
+            ZipFile.ExtractToDirectory(oldZip, slot);
+            string chart = Path.Combine(slot, Distribution.Editor, "personal-chart.json");
+            File.WriteAllText(chart, "{}");
+            await using var archive = File.OpenRead(full);
+            var next = new Release { version = nextVersion, size = archive.Length,
+                sha256 = Convert.ToHexString(await SHA256.HashDataAsync(archive)) };
+            var progress = new Observer();
+            await library.Update(new Release { version = oldVersion }, next, progress, default);
+            Check(routes.Patches == 1 && routes.Full == 0 && library.Installed(nextVersion), "Signed delta updates the existing slot");
+            Check(File.ReadAllText(chart) == "{}" && (await library.Verify(next, progress, default)).Count == 0,
+                "Personal chart preserved and all distribution files verified offline");
+        }
+        finally { temp.Delete(true); }
     }
 }

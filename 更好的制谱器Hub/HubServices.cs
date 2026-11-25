@@ -20,7 +20,15 @@ internal sealed class HubServices(string root, HttpClient http)
     internal const string IssuesUrl = "https://github.com/" + Distribution.Repository + "/issues";
     private const string Manifest = "hub-update.signed.json";
     internal static Version Current => typeof(HubServices).Assembly.GetName().Version;
-    internal static string UserRoot => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RevelationHub");
+    internal static string UserRoot
+    {
+        get
+        {
+            string portable = Path.Combine(AppContext.BaseDirectory, "portable");
+            return Directory.Exists(Path.Combine(portable, "versions")) ? portable :
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RevelationHub");
+        }
+    }
     private string Updates => Path.Combine(root, "updates");
     private string Installer(string version) => Path.Combine(Updates, $"Revelation-Hub-v{version}-x64.msi");
 
@@ -96,7 +104,7 @@ internal sealed class HubServices(string root, HttpClient http)
             string temporary = target + "." + Guid.NewGuid().ToString("N");
             try
             {
-                await new PackageDownload(http, new[] { primary, "https://gh-proxy.org/" + primary, "https://ghfast.top/" + primary }, r, progress).Fetch(temporary, ct).ConfigureAwait(false);
+                await new PackageDownload(http, DownloadSource.GitHubAsset(primary), r, progress).Fetch(temporary, ct).ConfigureAwait(false);
                 File.Move(temporary, target, true);
             }
             finally { File.Delete(temporary); }

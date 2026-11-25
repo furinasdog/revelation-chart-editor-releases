@@ -42,6 +42,7 @@ public sealed partial class Distribution
     }
     private void Recover()
     {
+        ClearCudaStage();
         if (!Directory.Exists(Transaction)) return;
         var backup = Path.Combine(Transaction,"previous");
         if (Directory.Exists(backup))
@@ -138,6 +139,9 @@ public sealed partial class Distribution
         {
             var prior=before.files.Select(f=>f.path).ToHashSet(FileNames);
             var supplied=after.files.Select(f=>f.path).ToHashSet(FileNames);
+            // CUDA runtime files belong to the specific signed add-on for this version.
+            string oldCuda = current.version != target.version && CudaFor(current.version)?.Installed == true
+                ? CudaDirectory(slot) + Path.DirectorySeparatorChar : null;
             var extras=SafeFiles(slot).Where(f=>!prior.Contains(Path.GetRelativePath(slot,f).Replace('\\','/')) && !FileNames.Equals(f,Path.Combine(slot,Receipt))).ToArray();
             bool complete=false;
             if (patch != null)
@@ -167,6 +171,7 @@ public sealed partial class Distribution
             foreach (var f in extras)
             {
                 ct.ThrowIfCancellationRequested();
+                if (oldCuda != null && f.StartsWith(oldCuda, StringComparison.OrdinalIgnoreCase)) continue;
                 string rel=Path.GetRelativePath(slot,f);
                 if (supplied.Contains(rel.Replace('\\','/'))) throw new IOException("新版本与自有文件重名，请先移出：" + rel);
                 string dest=Path.Combine(next,rel); Directory.CreateDirectory(Path.GetDirectoryName(dest)); File.Copy(f,dest);
@@ -182,7 +187,7 @@ public sealed partial class Distribution
     private Task FetchAsset(string tag,string name,Release package,string path,IProgress<Transfer> progress,CancellationToken ct)
     {
         string url=$"https://github.com/{Repository}/releases/download/{tag}/{name}";
-        return new PackageDownload(client,new[]{url,Proxy+url,"https://ghfast.top/"+url},package,progress).Fetch(path,ct);
+        return new PackageDownload(client, DownloadSource.GitHubAsset(url), package, progress).Fetch(path, ct);
     }
     internal void RemoveVersion(string version)
     {

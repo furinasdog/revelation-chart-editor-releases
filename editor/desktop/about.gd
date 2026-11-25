@@ -31,6 +31,7 @@ func _ready() -> void:
 	min_size = Vector2i(320, 175)
 	close_requested.connect(hide)
 	var tabs := TabContainer.new()
+	tabs.theme_type_variation = &"DesktopAboutTabs"
 	add_child(tabs)
 	tabs.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	tabs.offset_left = 12

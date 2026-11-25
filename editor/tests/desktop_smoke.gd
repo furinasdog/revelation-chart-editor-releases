@@ -37,7 +37,7 @@ func _run() -> void:
 	_check(desktop._tabs.get_tab_control(desktop._tabs.current_tab).name == &"键设置", "Key settings are the initial inspector tab")
 	_check(TranslationServer.get_locale() == "zh_CN", "Application uses the Simplified Chinese locale")
 	var analysis_menu: MenuButton = desktop._menu.get_child(0).get_child(3)
-	_check(analysis_menu.get_popup().get_theme_font_size("font_size") == 16, "Top menu items use the larger font")
+	_check(analysis_menu.get_popup().get_theme_font_size("font_size") == analysis_menu.get_theme_font_size("font_size"), "Top menu titles and commands use the same size")
 	await _check_tutorial(desktop, args[1])
 	_check(desktop._empty.visible, "Empty workspace exposes import actions")
 	_check(desktop._tip_label.text.contains("拖入音频"), "Empty workspace gives an import tip")
@@ -57,6 +57,15 @@ func _run() -> void:
 		for index in range(picker.item_count):
 			picker.item_selected.emit(index)
 			_check(licenses.get_child(1).text.length() > 180, "Bundled license is readable: " + picker.get_item_text(index))
+	for about_width: int in [650, 320]:
+		desktop._about.size = Vector2i(about_width, 320)
+		for page in about_tabs.get_tab_count():
+			about_tabs.current_tab = page
+			await process_frame
+			await process_frame
+			var content := about_tabs.get_current_tab_control().get_global_rect()
+			var panel := about_tabs.get_global_rect()
+			_check(is_equal_approx(content.position.x - panel.position.x, 18.0) and is_equal_approx(panel.end.x - content.end.x, 18.0), "About page %d has equal side padding at width %d" % [page, about_width])
 	desktop._about.hide()
 	await _check_results_at_high_scale(desktop)
 
@@ -132,7 +141,7 @@ func _run() -> void:
 			fast = true
 	_check(slow and fast, "Native BPM curve distinguishes 120 and 180 BPM")
 	chart.set_rhythm_analysis(synth)
-	_check(chart.apply_rhythm_curve() and chart.to_export_dict().has("tempoGrid"), "Applying the changing tempo explicitly serializes speed segments")
+	_check(chart.apply_rhythm_curve() and chart.bpm_segments.size() > 1 and not chart.to_export_dict().has("tempoGrid"), "Segmented tempo stays local while the original base BPM is exported")
 	print("TEMPO_CHANGE slow=", slow, " fast=", fast, " samples=", synth.get("tempo_curve", []).size())
 
 	desktop.sidebar._on_zip_selected(args[2])

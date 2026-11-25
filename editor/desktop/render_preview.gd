@@ -28,9 +28,12 @@ static func mount(owner: Node, chart: Node, resolution: Vector2i) -> Dictionary:
 	viewport.add_child(view)
 	return {"viewport": viewport, "chart": snapshot, "view": view}
 
-static func frame(scene: Dictionary, time_ms: float) -> Image:
+static func prepare_frame(scene: Dictionary, time_ms: float) -> void:
 	scene.chart.set_rt_pointer_time(time_ms)
 	scene.view.refresh_from_tab()
 	scene.viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+
+static func frame(scene: Dictionary, time_ms: float) -> Image:
+	prepare_frame(scene, time_ms)
 	await RenderingServer.frame_post_draw
 	return scene.viewport.get_texture().get_image()
