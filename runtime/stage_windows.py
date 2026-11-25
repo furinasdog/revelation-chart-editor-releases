@@ -50,13 +50,30 @@ def verify(path, expected):
         raise ValueError(f"SHA-256 mismatch: {path}")
 
 
+def stage_rmvpe(target, cache, model_only=False):
+    for destination, filename, sha in MODEL_FILES:
+        model = filename.endswith(".onnx")
+        if model_only and not model:
+            continue
+        asset = verified(cache, filename, f"{MODEL_BASE}/{filename}", sha)
+        folder = target / ("models" if model else "licenses")
+        folder.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(asset, folder / destination)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("target", type=Path)
     parser.add_argument("--cache", type=Path, required=True)
     parser.add_argument("--rmvpe-engine", type=Path)
+    parser.add_argument("--rmvpe-model-only", action="store_true",
+                        help="Stage only the verified RMVPE weight below TARGET/models for source runs")
+    parser.add_argument("--stems-engine", type=Path)
     args = parser.parse_args()
     args.cache.mkdir(parents=True, exist_ok=True)
+    if args.rmvpe_model_only:
+        stage_rmvpe(args.target, args.cache, model_only=True)
+        return
     python = args.target / "tools" / "python"
     site = python / "Lib" / "site-packages"
     site.mkdir(parents=True, exist_ok=True)
@@ -72,13 +89,11 @@ def main():
     for filename in ("rpy.py", "worker.py", "cli.py", "mcp_stdio.py"):
         shutil.copy2(source / filename, runtime)
     shutil.copy2(source / "revelation.cmd", args.target)
+    if args.stems_engine:
+        shutil.copy2(args.stems_engine, args.target / "revelation-stems.exe")
     if args.rmvpe_engine:
         shutil.copy2(args.rmvpe_engine, args.target / "revelation-rmvpe.exe")
-        for destination, filename, sha in MODEL_FILES:
-            asset = verified(args.cache, filename, f"{MODEL_BASE}/{filename}", sha)
-            folder = args.target / ("models" if filename.endswith(".onnx") else "licenses")
-            folder.mkdir(exist_ok=True)
-            shutil.copy2(asset, folder / destination)
+        stage_rmvpe(args.target, args.cache)
 
 
 if __name__ == "__main__":

@@ -19,7 +19,7 @@ public partial class MainWindow
 {
     private void ModelPage()
     {
-        foreach(var (id,name) in new[]{("music2emo","Music2Emo · 情绪分析"),("madmom","madmom · 节拍与起音")})
+        foreach(var (id,name) in new[]{("madmom","madmom · 节拍与起音"),("music2emo","Music2Emo · 情绪分析"),("htdemucs","HTDemucs · 四声部分离")})
         {
             Heading(name);modelCounts[id]=Detail(ModelCount(id));
             Detail(models.Location(id));
@@ -79,6 +79,7 @@ public partial class MainWindow
             if(file==EditorProfile.Prefs) fields=AddSection(form,group.Key switch{"display"=>"显示","audio"=>"音频","analysis"=>"分析工具",_=>"快捷键"});
             foreach(var f in group)
             {
+                if(f.Key=="music2emo_automatic" && !doc.Contains(f)) continue;
                 string value=doc.Get(f);
                 var row=new Grid{Margin=new Thickness(0,4,0,4)};
                 row.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(136)});

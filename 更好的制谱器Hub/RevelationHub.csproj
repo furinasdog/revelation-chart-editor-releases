@@ -7,7 +7,7 @@
     <AssemblyName>RevelationHub</AssemblyName>
     <RootNamespace>RevelationHub</RootNamespace>
     <ApplicationIcon>assets/Revelation.ico</ApplicationIcon>
-    <Version>1.4.0</Version>
+    <Version>1.5.0</Version>
     <AssemblyTitle>更好的制谱器Hub</AssemblyTitle>
     <Product>更好的制谱器Hub</Product>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
@@ -22,10 +22,37 @@
     <None Remove="tests/**"/>
     <Resource Include="assets/Revelation.ico" />
     <EmbeddedResource Include="publisher.xml" />
-    <EmbeddedResource Include="catalog.signed.json" />
-    <EmbeddedResource Include="announcements.json" />
-    <EmbeddedResource Include="manifests/*.json" LogicalName="RevelationHub.manifests.%(Filename)%(Extension)" />
-    <EmbeddedResource Include="assets/model-files.json" />
-    <EmbeddedResource Include="guides/*.md" LogicalName="RevelationHub.guides.%(Filename)%(Extension)" />
+    <HubData Include="catalog.signed.json;announcements.json" LogicalName="RevelationHub.%(Filename)%(Extension)" />
+    <HubData Include="manifests/*.json" LogicalName="RevelationHub.manifests.%(Filename)%(Extension)" />
+    <HubData Include="../editor/models/model-files.json" LogicalName="RevelationHub.assets.model-files.json" />
+    <HubData Include="guides/*.md" LogicalName="RevelationHub.guides.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="@(HubData)" Condition="'$(ProtectHub)' != 'true'" />
   </ItemGroup>
+  <ItemGroup Condition="'$(ProtectHub)' == 'true'">
+    <PackageReference Include="Obfuscar" Version="2.2.50" PrivateAssets="all" GeneratePathProperty="true" ExcludeAssets="all" />
+  </ItemGroup>
+  <Target Name="SealHubData" BeforeTargets="AssignTargetPaths" Condition="'$(ProtectHub)' == 'true'">
+    <MakeDir Directories="$(IntermediateOutputPath)" />
+    <WriteLinesToFile File="$(IntermediateOutputPath)hub-data-files.txt"
+                      Lines="@(HubData->'%(LogicalName)|%(FullPath)')" Encoding="UTF-8" Overwrite="true" />
+    <Exec Command="pwsh -NoProfile -File &quot;$(MSBuildProjectDirectory)/Protect-HubData.ps1&quot; -OutputDirectory &quot;$(IntermediateOutputPath).&quot;" />
+    <ItemGroup>
+      <EmbeddedResource Include="$(IntermediateOutputPath)hub-data.bin" LogicalName="RevelationHub.protected-data" />
+      <EmbeddedResource Include="$(IntermediateOutputPath)hub-data.key" LogicalName="RevelationHub.package-key" />
+    </ItemGroup>
+  </Target>
+  <Target Name="ProtectBundledHub" BeforeTargets="GenerateSingleFileBundle" DependsOnTargets="PrepareForBundle"
+          Condition="'$(ProtectHub)' == 'true' and '$(PublishSingleFile)' == 'true'">
+    <Copy SourceFiles="$(MSBuildProjectDirectory)/obfuscar.xml" DestinationFolder="$(TargetDir)" />
+    <Exec WorkingDirectory="$(TargetDir)" Command="&quot;$(PkgObfuscar)/tools/Obfuscar.Console.exe&quot; obfuscar.xml" />
+    <ItemGroup>
+      <FilesToBundle Remove="@(FilesToBundle)" Condition="'%(RelativePath)' == 'RevelationHub.dll'" />
+      <FilesToBundle Include="$(TargetDir)protected/RevelationHub.dll" RelativePath="RevelationHub.dll" />
+    </ItemGroup>
+  </Target>
+  <Target Name="RecordDevelopmentHub" AfterTargets="Build" Condition="Exists('$(TargetDir)$(AssemblyName).exe')">
+    <MakeDir Directories="$(MSBuildProjectDirectory)/bin" />
+    <WriteLinesToFile File="$(MSBuildProjectDirectory)/bin/development-hub.txt"
+                      Lines="$(TargetDir)$(AssemblyName).exe" Overwrite="true" WriteOnlyWhenDifferent="true" />
+  </Target>
 </Project>

@@ -122,19 +122,24 @@ func _check_inspector_and_guide(desktop: Node) -> bool:
 			passed = false
 	var tutorial: Control = desktop._onboarding
 	tutorial.open_beginner()
-	for pair in [[5, 0], [6, -1], [8, 1]]:
-		tutorial._show_step(pair[0])
+	var practice_tools := {"place": 0, "move": -1, "slide": 1}
+	for task: String in practice_tools:
+		var step_index: int = tutorial._steps.find_custom(func(step: Dictionary): return step.task == task)
+		if step_index < 0:
+			push_error("Missing tutorial exercise: " + task)
+			return false
+		tutorial._show_step(step_index)
 		await process_frame
 		await process_frame
 		var card: Rect2 = tutorial._panel.get_global_rect()
-		var button: Rect2 = desktop._tools[pair[1]].get_global_rect()
+		var button: Rect2 = desktop._tools[practice_tools[task]].get_global_rect()
 		if card.intersects(button) or card.intersects(desktop.rollout.get_global_rect()) or not tutorial.get_global_rect().encloses(card):
-			push_error("Tutorial step %d covers its tool or practice grid, or exceeds the viewport" % (pair[0] + 1))
+			push_error("Tutorial exercise %s covers its tool or practice grid, or exceeds the viewport" % task)
 			passed = false
 		desktop._choose_tool(2)
 		_click(button.get_center())
-		if desktop.chart.current_tool_type != pair[1]:
-			push_error("Tutorial step %d intercepted the brush click" % (pair[0] + 1))
+		if desktop.chart.current_tool_type != practice_tools[task]:
+			push_error("Tutorial exercise %s intercepted the brush click" % task)
 			passed = false
 	tutorial.close_guide()
 	return passed

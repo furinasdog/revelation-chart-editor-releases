@@ -84,6 +84,7 @@ func _run() -> void:
 	_check(call.result.get("prompts", [{}])[0].get("name") == "revelation-charting", "Discover the charting prompt")
 	call = await _rpc("prompts/get", {"name": "revelation-charting"})
 	var prompt: String = call.result.get("messages", [{"content": {}}])[0].content.get("text", "")
+	_check("沿用相对拍位" in instructions and "沿用相对拍位" in prompt, "Both MCP entry points teach variation on a repeated phrase")
 	_check("chart.notes(from_ms, to_ms" in prompt and "保持判定、松开和预告时间" in prompt and "import_audio" in prompt,
 		"Prompt teaches .rpy, hold geometry and audio import")
 	call = await _tool("get_editing_guide", {})

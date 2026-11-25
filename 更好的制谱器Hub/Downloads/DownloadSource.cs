@@ -17,7 +17,12 @@ internal sealed class DownloadSource(HttpClient http, string[] urls, int first, 
     internal int Count => isolate ? 1 : urls.Length;
     internal static string[] GitHubAsset(string url) =>
         [url, "https://gh-proxy.org/" + url, "https://ghfast.top/" + url];
-    internal static string Label(string url) => new Uri(url).Host is "github.com" or "raw.githubusercontent.com" ? "GitHub" : "镜像";
+    internal static string Label(string url) => new Uri(url).Host switch
+    {
+        "github.com" or "raw.githubusercontent.com" => "GitHub",
+        "huggingface.co" => "Hugging Face",
+        _ => "镜像"
+    };
     internal string Label(int index) => Label(urls[index]);
 
     internal int AfterFailure(int index)

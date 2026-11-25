@@ -13,7 +13,7 @@ internal static class Guide
         var chapters=new List<Chapter>();
         foreach(var (id,book) in new[]{("hub","Hub"),("editor","制谱器"),("modules","制谱器模块")})
         {
-            using var stream=typeof(Guide).Assembly.GetManifestResourceStream("RevelationHub.guides."+id+".md");
+            using var stream=HubResources.Open("RevelationHub.guides."+id+".md");
             using var reader=new StreamReader(stream);string title="概览";var lines=new List<string>();
             void Add(){string body=string.Join("\n",lines).Trim();if(body.Length>0)chapters.Add(new(book,title,body));lines.Clear();}
             while(reader.ReadLine() is string line)

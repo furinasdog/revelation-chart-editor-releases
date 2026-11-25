@@ -22,7 +22,7 @@ func run() -> void:
 	var desktop: Node = current_scene.desktop
 	var chart: Node = desktop.chart
 	var sidebar: Node = desktop.sidebar
-	var scratch: String = args[2]
+	var scratch: String = args[2].replace("\\", "/")
 	var first := scratch.path_join("first")
 	var second := scratch.path_join("existing")
 	var empty := scratch.path_join("empty")
@@ -56,12 +56,15 @@ func run() -> void:
 	check(chart.get_root_dir() == temp_root, "Opening an empty folder does not change the project root")
 
 	desktop._save_chart()
-	check(desktop._save_folder_generation == desktop._document_generation, "First explicit save asks for a folder even after autosaving")
+	check(desktop._save_folder_generation == -1 and FileAccess.file_exists(temp_root.path_join("chart.json")),
+		"Ctrl+S saves an imported song in the current draft folder")
+	desktop._choose_chart_save_folder()
+	check(desktop._save_folder_generation == desktop._document_generation, "Save As asks for a destination")
 	desktop._save_folder.hide()
 	desktop._save_folder.canceled.emit()
 	check(chart.get_root_dir() == temp_root and desktop._save_folder_generation == -1, "Cancelling leaves the project where it was")
 
-	desktop._save_chart()
+	desktop._choose_chart_save_folder()
 	desktop._save_folder.hide()
 	desktop._save_folder.dir_selected.emit(first)
 	var path := first.path_join("chart.json")
@@ -94,7 +97,9 @@ func run() -> void:
 
 	check(desktop._open_chart_file(args[1]) and Storage.is_working_folder(chart.get_root_dir()), "ZIP input is edited in temporary storage")
 	desktop._save_chart()
-	check(desktop._save_folder_generation == desktop._document_generation, "First save of a ZIP import also opens the folder picker")
+	check(desktop._save_folder_generation == -1 and FileAccess.file_exists(chart.get_root_dir().path_join(chart._root_json_name)),
+		"Ctrl+S saves ZIP edits in the draft folder")
+	desktop._choose_chart_save_folder()
 	var sentinel := FileAccess.open(second.path_join("keep.txt"), FileAccess.WRITE)
 	sentinel.store_string("existing data")
 	sentinel.close()
@@ -111,9 +116,7 @@ func run() -> void:
 		package.close()
 	else:
 		check(false, "Project can still export a playable ZIP")
-	var audio: String = chart.audio_path
-	chart.audio_path = "missing.wav"
-	check(not desktop._save_chart_in_folder(empty) and chart.get_root_dir() == copy and DirAccess.get_files_at(empty).is_empty(),
+	check(not desktop._save_chart_in_folder(empty.path_join("missing-folder")) and chart.get_root_dir() == copy and DirAccess.get_files_at(empty).is_empty(),
 		"Save failure leaves the current project and selected target intact")
-	chart.audio_path = audio
+	print("CHART_STORAGE_SMOKE failures=", failures)
 	quit(0 if failures == 0 else 1)

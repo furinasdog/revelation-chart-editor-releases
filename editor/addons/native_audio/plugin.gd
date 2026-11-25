@@ -8,7 +8,7 @@ class AudioExport extends EditorExportPlugin:
 	func _export_begin(features: PackedStringArray, _debug: bool, _path: String, _flags: int) -> void:
 		if "windows" not in features or "x86_64" not in features:
 			return
-		for file in ["revelation-madmom.exe", "revelation-essentia.exe", "revelation-music2emo.exe", "revelation-rmvpe.exe"]:
+		for file in ["revelation-madmom.exe", "revelation-essentia.exe", "revelation-music2emo.exe", "revelation-rmvpe.exe", "revelation-stems.exe"]:
 			var path: String = "res://bin/" + file
 			if FileAccess.file_exists(path):
 				add_shared_object(path, PackedStringArray(["windows", "x86_64"]), "")

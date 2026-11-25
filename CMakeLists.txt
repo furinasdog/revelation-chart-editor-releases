@@ -14,6 +14,10 @@ if(REVELATION_BUILD_AUDIO_ENGINES)
   set(ONNXRUNTIME_ROOT "${ONNXRUNTIME_DIR}" CACHE PATH "ONNX Runtime C++ SDK for the audio engines")
   set(REVELATION_EDITOR_BIN "${CMAKE_CURRENT_SOURCE_DIR}/editor/bin" CACHE PATH "Editor runtime binaries")
   add_subdirectory("${REVELATION_AUDIO_NATIVE_DIR}" audio-engines)
+  # Model installation belongs to the Hub. The editor's native worker reads verified local files.
+  set_source_files_properties("${REVELATION_AUDIO_NATIVE_DIR}/src/model_files_windows.cpp"
+    TARGET_DIRECTORY revelation-madmom PROPERTIES HEADER_FILE_ONLY ON)
+  target_sources(revelation-madmom PRIVATE native/madmom_local_models.cpp)
 endif()
 
 option(REVELATION_BUILD_MUSIC2EMO "Build the native Music2Emo emotion analyzer" OFF)
@@ -22,6 +26,13 @@ if(REVELATION_BUILD_MUSIC2EMO)
   set(ONNXRUNTIME_ROOT "${ONNXRUNTIME_DIR}" CACHE PATH "ONNX Runtime C++ SDK for Music2Emo")
   set(REVELATION_EDITOR_BIN "${CMAKE_CURRENT_SOURCE_DIR}/editor/bin" CACHE PATH "Editor runtime binaries")
   add_subdirectory("${REVELATION_MUSIC2EMO_DIR}" music2emo)
+endif()
+
+option(REVELATION_BUILD_HTDEMUCS "Build the native HTDemucs four-stem separator" OFF)
+set(REVELATION_HTDEMUCS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/revelation-htdemucs-native" CACHE PATH "HTDemucs C++ source checkout")
+if(REVELATION_BUILD_HTDEMUCS)
+  add_subdirectory("${REVELATION_HTDEMUCS_DIR}" htdemucs)
+  set_target_properties(revelation-stems PROPERTIES RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_CURRENT_SOURCE_DIR}/editor/bin>")
 endif()
 
 find_path(ORT_INCLUDE onnxruntime_cxx_api.h PATHS "${ONNXRUNTIME_DIR}/include" REQUIRED NO_DEFAULT_PATH)

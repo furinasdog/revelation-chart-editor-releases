@@ -46,6 +46,8 @@ internal sealed class ConfigDocument(string path)
         if (raw.StartsWith('"')) { try{return JsonSerializer.Deserialize<string>(raw);} catch(JsonException){return raw.Trim('"');} }
         return raw;
     }
+    internal bool Contains(Setting field) =>
+        Locate(original.Replace("\r\n","\n").Split('\n').ToList(),field.Section,field.Key).match >= 0;
     internal void Save(Dictionary<Setting,string> values)
     {
         if ((File.Exists(path)?File.ReadAllText(path):"")!=original) throw new IOException("编辑器已修改此配置，请刷新后重新保存。");
@@ -93,7 +95,7 @@ internal sealed class EditorProfile(string root)
         new(Prefs,"audio","startup_sound_volume","启动音量","0.5","number",0,1),new(Prefs,"audio","import_matching_lyrics","导入同名歌词","false","bool"),
         new(Prefs,"audio","output_device","音频输出设备","Default"),new(Prefs,"analysis","ffmpeg","FFmpeg 程序路径",""),
         new(Prefs,"analysis","music2emo_models","Music2Emo 模型目录",""),new(Prefs,"analysis","music2emo_low_memory","情绪分析低内存模式","false","bool"),
-        new(Prefs,"analysis","music2emo_automatic","自动分析情绪","true","bool"),new(Prefs,"shortcuts","scheme","快捷键方案","standard","standard|original"),
+        new(Prefs,"analysis","music2emo_automatic","自动分析情绪（仅旧版）","true","bool"),new(Prefs,"shortcuts","scheme","快捷键方案","standard","standard|original"),
         new(Agent,"agent","url","API URL",""),new(Agent,"agent","model","模型名称",""),new(Agent,"agent","key","API Key","","secret"),
         new(Mcp,"mcp","port","服务端口","17387","integer",1,65535),new(Mcp,"mcp","path","服务路径","/mcp"),
         new(Mcp,"mcp","share_media","允许读取媒体","false","bool"),new(Mcp,"mcp","share_paths","共享本地文件路径","false","bool")

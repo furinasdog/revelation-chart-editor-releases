@@ -46,19 +46,9 @@ func run() -> void:
 	for point: Dictionary in curve:
 		check(absf(point.bpm - 172) < 1.0, "172 BPM is stable throughout the song")
 	chart.set_rhythm_analysis(stationary)
-	check(grid.reference_mode == ReferenceMode.TRADITIONAL, "Manual editing starts with traditional quantization")
-	desktop.sidebar.set_guide_beat_visibility(false)
-	check(not grid.show_rhythm_markers, "Traditional mode can hide the captured beats")
-	desktop.sidebar.set_guide_mode(ReferenceMode.AUTO_TEMPO)
-	check(grid.reference_mode == ReferenceMode.AUTO_TEMPO and grid._guide_units.size() > 200, "Automatic tempo mode draws a subdivided grid")
-	check(grid.show_rhythm_markers, "Automatic tempo keeps its own beat visibility")
-	var marker: int = grid._guide_units[17]
-	check(grid._snap_x_to_time_line(marker * grid.column_width / 64.0) == marker, "Snap uses the displayed tempo guide")
-	desktop.sidebar.set_guide_beat_visibility(false)
+	check(desktop._mode_choice.item_count == 2, "Timeline offers traditional and applied capture lines")
 	desktop.sidebar.set_guide_mode(ReferenceMode.BEATS)
-	check(grid.show_rhythm_markers and grid._guide_units.is_empty(), "Beat-only mode shows real beats without BPM subdivisions")
-	check(not desktop._toggle_beats.visible, "Beat-only mode has no visibility toggle")
-	check(grid._beat_positions.size() == stationary.beats.size(), "Every captured beat is available in beat-only mode")
+	check(grid.capture_lines.positions.size() == stationary.beats.size(), "Legacy captured beats remain available in the roll")
 	var beat_time: int = roundi(stationary.beats[4])
 	var beat_x: float = chart.ms_to_beat_position(beat_time) * grid.column_width
 	var beat_unit: int = grid._snap_x_to_time_line(beat_x)
@@ -68,7 +58,9 @@ func run() -> void:
 	check(snapped_id >= 0 and chart.get_note_data(snapped_id).end_time == beat_time, "Placed notes use the captured timestamp exactly")
 	chart.remove_note(snapped_id)
 	desktop.sidebar.set_guide_mode(ReferenceMode.TRADITIONAL)
-	check(not grid.show_rhythm_markers and grid._guide_units.is_empty(), "Traditional reference settings are restored")
+	check(grid.snap_target_label(64).is_empty(), "A missing project BPM does not create a traditional snap target")
+	chart.set_bpm(120)
+	check(grid.snap_target_label(64) == "整拍", "Explicit BPM enables traditional quantization")
 
 
 	var changing: Dictionary = desktop.analysis.analyze_file(args[1])

@@ -1,20 +1,11 @@
 extends SceneTree
 
-var _updates := 0
-var _proper_dialog := false
-
 func _initialize() -> void:
 	_run.call_deferred()
 
-func _wait(workspace: Node) -> bool:
-	var deadline := Time.get_ticks_msec() + 45000
-	while workspace._analyzing and Time.get_ticks_msec() < deadline:
-		await process_frame
-	return not workspace._analyzing
-
 func _run() -> void:
 	var args := OS.get_cmdline_user_args()
-	if args.size() != 1 or change_scene_to_file("res://main/main.tscn") != OK:
+	if args.size() != 2 or change_scene_to_file("res://main/main.tscn") != OK:
 		quit(2)
 		return
 	await scene_changed
@@ -24,27 +15,29 @@ func _run() -> void:
 	if not desk.import_audio(args[0], false, false):
 		quit(2)
 		return
-	desk.analysis.madmom_download_progress.connect(func(model: String, _source: String, index: int, total: int, _bytes: int, size: int):
-		_updates += 1
-		var dialog: Window = desk._madmom_download_dialog
-		_proper_dialog = _proper_dialog or (dialog and dialog.visible and dialog.exclusive and dialog.get_parent() == desk._analysis_dialog
-			and desk._madmom_download_label.text.contains(model) and index == 1 and total == 1
-			and desk._madmom_download_file.max_value == size and desk._madmom_download_total.max_value == 1000))
-	var options := {"engine": "madmom", "tempo_engine": "native", "tasks": ["onsets"],
-		"model": "default", "madmom_model_cache": "user://download-smoke"}
-	if not desk._start_analysis(options) or not await _wait(desk) or not _proper_dialog:
-		push_error("A cold madmom download must report a file and aggregate progress in a modal.")
+	desk.preferences.analysis_options["madmom_model_cache"] = "user://missing-models"
+	desk._analysis_panel.select("onset-cnn")
+	desk._analysis_panel._run.pressed.emit()
+	if desk._analyzing or not desk._model_help.visible or desk._help_model != "madmom" or DirAccess.dir_exists_absolute("user://missing-models"):
+		push_error("A cold madmom capture must open the Hub guide without downloading.")
 		quit(1)
 		return
-	if desk._madmom_download_dialog.visible or desk.chart.rhythm_analysis.get("onsets", []).is_empty():
-		push_error("The verified download must close its modal and allow onset detection to finish.")
+	desk.preferences.analysis_options["madmom_model_cache"] = args[1]
+	desk._model_help.get_ok_button().pressed.emit()
+	await process_frame
+	desk._analysis_panel._run.pressed.emit()
+	var deadline := Time.get_ticks_msec() + 45000
+	while desk._analyzing and Time.get_ticks_msec() < deadline:
+		await process_frame
+	if desk._analyzing or desk._model_help.visible or desk.chart.rhythm_analysis.get("onsets", []).is_empty():
+		push_error("The same editor session must accept a valid offline model after refresh.")
 		quit(1)
 		return
-	desk._message.hide()
-	_updates = 0
-	if not desk._start_analysis(options) or not await _wait(desk) or _updates != 0:
-		push_error("Reading the same verified cache must not show a download.")
+	desk.preferences.analysis_options["madmom_model_cache"] = "user://missing-models"
+	desk._analysis_panel._run.pressed.emit()
+	if desk._analyzing or desk._model_help.visible or desk.chart.rhythm_analysis.get("capture_id") != "onset-cnn":
+		push_error("Applying a cached capture must work without installed weights.")
 		quit(1)
 		return
-	print("MADMOM_DOWNLOAD_SMOKE verified")
+	print("MADMOM_MODEL_MANAGER_SMOKE verified")
 	quit()

@@ -410,7 +410,8 @@ class RevelationRhythm : public RefCounted {
 protected:
     static void _bind_methods() {
         ClassDB::bind_method(D_METHOD("load_model", "model"), &RevelationRhythm::load_model);
-        ClassDB::bind_method(D_METHOD("analyze", "samples", "coefficients"), &RevelationRhythm::analyze);
+        ClassDB::bind_method(D_METHOD("analyze", "samples", "coefficients", "include_tempo", "predict_beats"),
+                             &RevelationRhythm::analyze, DEFVAL(true), DEFVAL(true));
     }
 
 public:
@@ -431,9 +432,10 @@ public:
         }
     }
 
-    Dictionary analyze(const PackedFloat32Array &samples, const PackedFloat32Array &coefficients) const {
+    Dictionary analyze(const PackedFloat32Array &samples, const PackedFloat32Array &coefficients,
+                       bool include_tempo, bool predict_beats) const {
         Dictionary result;
-        if (!session_) {
+        if (predict_beats && !session_) {
             result["error"] = "ONNX Runtime session has not been initialized";
             return result;
         }
@@ -443,24 +445,28 @@ public:
         }
         try {
             auto frontend = features(samples, coefficients);
-            const size_t frames = frontend.onset.size();
-            std::vector<float> beat_logits(frames, -1000), downbeat_logits(frames, -1000);
-            infer(*session_, frontend.mel, beat_logits, downbeat_logits);
-            auto beats = detect_peaks(beat_logits);
-            auto downbeats = detect_peaks(downbeat_logits);
-            if (!beats.empty()) {
-                for (float &time : downbeats) {
-                    auto next = std::lower_bound(beats.begin(), beats.end(), time);
-                    if (next == beats.end()) time = beats.back();
-                    else if (next == beats.begin() || *next - time < time - next[-1]) time = *next;
-                    else time = next[-1];
-                }
-                downbeats.erase(std::unique(downbeats.begin(), downbeats.end()), downbeats.end());
-            }
             const float duration = samples.size() * (1000.0f / sample_rate);
             result["duration_ms"] = duration;
-            result["beats"] = packed(beats, duration);
-            result["downbeats"] = packed(downbeats, duration);
+            std::vector<float> beats;
+            if (predict_beats) {
+                const size_t frames = frontend.onset.size();
+                std::vector<float> beat_logits(frames, -1000), downbeat_logits(frames, -1000);
+                infer(*session_, frontend.mel, beat_logits, downbeat_logits);
+                beats = detect_peaks(beat_logits);
+                auto downbeats = detect_peaks(downbeat_logits);
+                if (!beats.empty()) {
+                    for (float &time : downbeats) {
+                        auto next = std::lower_bound(beats.begin(), beats.end(), time);
+                        if (next == beats.end()) time = beats.back();
+                        else if (next == beats.begin() || *next - time < time - next[-1]) time = *next;
+                        else time = next[-1];
+                    }
+                    downbeats.erase(std::unique(downbeats.begin(), downbeats.end()), downbeats.end());
+                }
+                result["beats"] = packed(beats, duration);
+                result["downbeats"] = packed(downbeats, duration);
+            }
+            if (!include_tempo) return result;
             Array curve = tempo_curve(frontend.onset);
             const Pulse steady = phase_locked_tempo(frontend.onset, curve, beats);
             if (steady.bpm > 0) {

@@ -75,6 +75,7 @@ class Handler(BaseHTTPRequestHandler):
             if context["brief"] == "导入指定的另一段音频并检查。":
                 prompt = messages[0]["content"]
                 assert "内置 Co-pilot 使用直接工具" in prompt and "斜上方" in prompt and "scale_hold_paths" in prompt
+                assert "沿用相对拍位" in prompt and "倒推长键终点" in prompt
                 assert "run_rpy" not in prompt
                 if len(messages) == 2:
                     self.respond([action("import_audio", path=os.environ["REVELATION_TEST_IMPORT_PATH"])])

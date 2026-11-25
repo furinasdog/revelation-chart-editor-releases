@@ -17,7 +17,7 @@ const Automatic := preload("res://desktop/automatic_chart.gd")
 const Frames := preload("res://desktop/agent_frames.gd")
 const EditorTheme := preload("res://desktop/editor_theme.gd")
 const EDITABLE_STATE := ["notes", "events", "next_note_id", "next_event_id", "anim_rect_slots", "bg_anim_key_slots",
-	"preset_bg_anim_groups", "bpm_segments", "total_beats", "bpm_val", "remarks"]
+	"preset_bg_anim_groups", "bpm_segments", "total_beats", "bpm_val", "has_project_bpm", "remarks"]
 const FIELD_NAMES := {
 	"factor": "滑动距离倍率",
 	"notes": "音符", "ids": "音符编号", "id": "编号", "type": "类型", "time_ms": "时间（毫秒）", "lane": "轨道（从 0 开始）",

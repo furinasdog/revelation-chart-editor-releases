@@ -81,7 +81,7 @@ internal sealed class HubServices(string root, HttpClient http)
         catch (Exception ex) when (ex is IOException or JsonException or InvalidDataException)
         {
             ct.ThrowIfCancellationRequested();
-            using var stream = typeof(HubServices).Assembly.GetManifestResourceStream("RevelationHub.announcements.json");
+            using var stream = HubResources.Open("RevelationHub.announcements.json");
             using var reader = new StreamReader(stream);
             return ParseNotices(await reader.ReadToEndAsync(ct).ConfigureAwait(false));
         }

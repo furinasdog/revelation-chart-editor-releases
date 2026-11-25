@@ -95,7 +95,7 @@ public sealed partial class Distribution
         }
         if (!ValidVersion(release.version)) throw new InvalidDataException("版本号无效。");
         string name = "editor-v" + release.version + ".signed.json";
-        using var embedded = typeof(Distribution).Assembly.GetManifestResourceStream("RevelationHub.manifests."+name);
+        using var embedded = HubResources.Open("RevelationHub.manifests."+name);
         if (embedded != null) { using var reader = new StreamReader(embedded); return Parse(reader.ReadToEnd()); }
         return await new HubServices(Root,client).ReadFeed("manifests/"+name, Parse, ct, 8<<20).ConfigureAwait(false);
     }

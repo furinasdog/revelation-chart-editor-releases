@@ -55,10 +55,6 @@ var copilot_width := 0.28
 var ffmpeg_path := ""
 var emotion_models := ""
 var limit_emotion_memory := false
-var analyze_emotion_automatically := true
-var _emotion_models_available := false
-var _emotion_auto_toggle: CheckBox
-var _emotion_auto_note: Label
 var tutorial_experience := ""
 var shortcut_scheme := "standard"
 var theme_mode := "system"
@@ -101,7 +97,6 @@ func load_settings() -> void:
 	ffmpeg_path = str(file.get_value("analysis", "ffmpeg", ""))
 	emotion_models = str(file.get_value("analysis", "music2emo_models", ""))
 	limit_emotion_memory = bool(file.get_value("analysis", "music2emo_low_memory", false))
-	analyze_emotion_automatically = bool(file.get_value("analysis", "music2emo_automatic", true))
 	tutorial_experience = str(file.get_value("tutorial", "experience", ""))
 	shortcut_scheme = str(file.get_value("shortcuts", "scheme", "standard"))
 	theme_mode = str(file.get_value("display", "theme", "dark" if has_saved_preferences else "system"))
@@ -112,6 +107,8 @@ func load_settings() -> void:
 
 func save() -> void:
 	var file := ConfigFile.new()
+	if FileAccess.file_exists(FILE):
+		file.load(FILE)
 	file.set_value("display", "scale", window_scale)
 	file.set_value("display", "automatic_scale", auto_window_scale)
 	file.set_value("display", "theme", theme_mode)
@@ -127,7 +124,6 @@ func save() -> void:
 	file.set_value("analysis", "ffmpeg", ffmpeg_path)
 	file.set_value("analysis", "music2emo_models", emotion_models)
 	file.set_value("analysis", "music2emo_low_memory", limit_emotion_memory)
-	file.set_value("analysis", "music2emo_automatic", analyze_emotion_automatically)
 	file.set_value("tutorial", "experience", tutorial_experience)
 	file.set_value("shortcuts", "scheme", shortcut_scheme)
 	for action: String in ACTIONS:
@@ -441,12 +437,12 @@ func _build_tools_page(page: VBoxContainer) -> void:
 	ffmpeg.text = ffmpeg_path
 	ffmpeg.text_changed.connect(func(path: String): ffmpeg_path = path.strip_edges())
 	page.add_child(ffmpeg)
-	_emotion_auto_toggle = CheckBox.new()
-	_emotion_auto_toggle.text = "每次分析时生成情感标注"
-	_emotion_auto_toggle.toggled.connect(func(enabled: bool):
-		analyze_emotion_automatically = enabled
-		save())
-	page.add_child(_emotion_auto_toggle)
+	_add_label(page, "madmom 模型缓存目录")
+	var model_cache := LineEdit.new()
+	model_cache.placeholder_text = "留空时使用默认目录"
+	model_cache.text = analysis_options.get("madmom_model_cache", "")
+	model_cache.text_changed.connect(func(path: String): analysis_options["madmom_model_cache"] = path.strip_edges())
+	page.add_child(model_cache)
 	var low_memory := CheckBox.new()
 	low_memory.text = "低内存情绪分析"
 	low_memory.tooltip_text = "分块运行 Music2Emo，保留 30 秒标注。可用内存不足时也会自动使用此模式。"
@@ -455,21 +451,6 @@ func _build_tools_page(page: VBoxContainer) -> void:
 		limit_emotion_memory = enabled
 		save())
 	page.add_child(low_memory)
-	_emotion_auto_note = _add_label(page, "")
-	_emotion_auto_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_refresh_emotion_setting()
-
-func set_emotion_models_available(available: bool) -> void:
-	_emotion_models_available = available
-	_refresh_emotion_setting()
-
-func _refresh_emotion_setting() -> void:
-	if not _emotion_auto_toggle:
-		return
-	_emotion_auto_toggle.disabled = not _emotion_models_available
-	_emotion_auto_toggle.set_pressed_no_signal(_emotion_models_available and analyze_emotion_automatically)
-	_emotion_auto_note.text = ("也可从「情绪分析」单独分析当前歌曲。" if _emotion_models_available
-		else "安装模型后可启用。下载入口位于右上「情绪分析」。")
 
 func _add_label(parent: Control, caption: String) -> Label:
 	var label := Label.new()

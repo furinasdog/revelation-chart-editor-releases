@@ -13,7 +13,8 @@ ROOT = Path(__file__).resolve().parents[1]
 APP = "更好的制谱器"
 DOCS = ["README.md", "LICENSE", "THIRD_PARTY.md", "CONTRIBUTING.md", "功能与入口说明.md"]
 COMPONENTS = ["revelation_rhythm.dll", "onnxruntime.dll", "revelation-essentia.exe",
-              "revelation-madmom.exe", "revelation-music2emo.exe", "revelation-rmvpe.exe"]
+              "revelation-madmom.exe", "revelation-music2emo.exe", "revelation-rmvpe.exe",
+              "revelation-stems.exe"]
 
 
 def add_tree(archive, folder, prefix):
@@ -59,6 +60,8 @@ def create(export, deps, output):
             z.write(deps / "models/rmvpe.onnx", app / "models/rmvpe.onnx")
             licenses = {p.name: p for base in [deps / "licenses", ROOT / "editor/licenses"] for p in base.iterdir() if p.is_file()}
             licenses.update({"LICENSE-GDSO-Godot.txt": export / "LICENSE-Godot.txt", "LICENSE-Grit.txt": export / "LICENSE-Grit.txt"})
+            if (export / "COPYRIGHT-Godot.txt").is_file():
+                licenses["COPYRIGHT-Godot.txt"] = export / "COPYRIGHT-Godot.txt"
             for name, path in sorted(licenses.items()):
                 z.write(path, app / "licenses" / name)
             for name in ["cli.py", "rpy.py", "worker.py", "mcp_stdio.py"]:
@@ -67,7 +70,8 @@ def create(export, deps, output):
             for name in DOCS:
                 z.write(ROOT / name, app / name)
             z.write(ROOT / "更好的制谱器Hub/guides/editor.md", app / "新手教程.md")
-            add_tree(z, ROOT / "docs", app / "docs")
+            add_tree(z, ROOT / "docs/tutorial", app / "docs/tutorial")
+            z.write(ROOT / "docs/上游1.10.1同步.md", app / "docs/上游1.10.1同步.md")
         with ZipFile(work / archives[1], "w", ZIP_DEFLATED, compresslevel=5) as z:
             for path in sources():
                 name = path.relative_to(ROOT)

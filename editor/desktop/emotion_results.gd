@@ -2,7 +2,7 @@ extends VBoxContainer
 
 signal analyze_requested
 signal models_requested
-signal download_requested
+signal hub_requested
 signal segment_chosen(time_ms: int)
 
 const LABELS := {
@@ -24,8 +24,7 @@ var _table: Tree
 var _status: Label
 var _run: Button
 var _models: Button
-var _download: Button
-var _downloading := false
+var _hub: Button
 var _keys: Array = []
 
 func setup() -> void:
@@ -38,11 +37,11 @@ func setup() -> void:
 	_run.text = "分析情绪"
 	_run.pressed.connect(analyze_requested.emit)
 	header.add_child(_run)
-	_download = Button.new()
-	_download.text = "下载模型"
-	_download.tooltip_text = "约 152 MiB。MERT 权重仅限非商业用途。"
-	_download.pressed.connect(download_requested.emit)
-	header.add_child(_download)
+	_hub = Button.new()
+	_hub.text = "模型管理"
+	_hub.tooltip_text = "约 152 MiB。MERT 权重仅限非商业用途。"
+	_hub.pressed.connect(hub_requested.emit)
+	header.add_child(_hub)
 	_models = Button.new()
 	_models.text = "模型目录…"
 	_models.pressed.connect(models_requested.emit)
@@ -71,11 +70,11 @@ func setup() -> void:
 
 func refresh(chart: Node, installed: bool, running: bool, feedback: String) -> void:
 	_run.disabled = running or chart.audio_path.is_empty() or not installed
-	_download.visible = _downloading or not installed
+	_hub.visible = not installed
 	var segments: Array = chart.rhythm_analysis.get("emotions", [])
 	_status.text = feedback if not feedback.is_empty() else (
 		"约每 30 秒标注一次。效价表示情绪正负，唤醒度表示激活强度，均为 1–9。双击一行可定位时间轴。"
-		if installed or not segments.is_empty() else "首次使用需下载约 152 MiB。MERT 权重仅限非商业用途。")
+		if installed or not segments.is_empty() else "在 Hub 的「下载 → 模型管理」下载约 152 MiB，完成后回来刷新。MERT 权重仅限非商业用途。")
 	var delay := roundi(chart.audio_delay_ms)
 	if _keys == [delay, segments]:
 		return
@@ -94,12 +93,6 @@ func refresh(chart: Node, installed: bool, running: bool, feedback: String) -> v
 		row.set_text(1, " · ".join(tags))
 		row.set_text(2, "%.1f" % segment.valence)
 		row.set_text(3, "%.1f" % segment.arousal)
-
-func set_downloading(active: bool) -> void:
-	_downloading = active
-	_download.text = "正在下载…" if active else "下载模型"
-	_download.disabled = active
-	_models.disabled = active
 
 static func _time(ms: int) -> String:
 	@warning_ignore("integer_division")

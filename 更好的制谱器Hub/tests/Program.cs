@@ -82,6 +82,8 @@ internal partial class Program
     static async Task Main(string[] args)
     {
         if (args is ["--downloads"]) { await CheckDownloads(); return; }
+        if (args is ["--models", var madmom, var emotion, var stems]) { await CheckModels(madmom,emotion,stems); return; }
+        if (args is ["--online-model", var model, var profileRoot]) { await CheckOnlineModel(model,profileRoot); return; }
         if (args is ["--upgrade", var previousVersion, var previousZip, var version, var full, var patch])
         { await CheckUpgrade(previousVersion, previousZip, version, full, patch); return; }
         if (args is ["--cuda", var descriptor, var addon]) { await CheckCuda(descriptor,addon); return; }

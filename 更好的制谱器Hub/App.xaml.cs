@@ -9,7 +9,11 @@ namespace RevelationHub
         protected override async void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
-            if (e.Args.Length == 0) { new MainWindow().Show(); return; }
+            if (e.Args.Length == 0 || e.Args is ["--models"])
+            {
+                new MainWindow { ShowModelsOnLaunch = e.Args.Length > 0 }.Show();
+                return;
+            }
             ShutdownMode = ShutdownMode.OnExplicitShutdown;
             try
             {

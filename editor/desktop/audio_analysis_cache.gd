@@ -6,25 +6,11 @@ const SCHEMA := 1
 const MAX_TRACKS := 8
 const MAX_BYTES := 12 * 1024 * 1024
 
-var _last_path := ""
-var _last_stamp := 0
-var _last_size := -1
-var _last_hash := ""
+var _fingerprint := preload("res://desktop/audio_fingerprint.gd").new()
 var _tracks := {}
 
-func fingerprint(path: String) -> String:
-	var file := FileAccess.open(path, FileAccess.READ)
-	if not file:
-		return ""
-	var size := file.get_length()
-	file.close()
-	var stamp := FileAccess.get_modified_time(path)
-	if path != _last_path or stamp != _last_stamp or size != _last_size:
-		_last_path = path
-		_last_stamp = stamp
-		_last_size = size
-		_last_hash = FileAccess.get_sha256(path)
-	return _last_hash
+func fingerprint(path: String, refresh := false) -> String:
+	return _fingerprint.read(path, refresh)
 
 func lookup(id: String, options: Dictionary) -> Dictionary:
 	var result := {"task_errors": {}, "cache_hits": [], "missing": []}
@@ -48,6 +34,8 @@ func store(id: String, options: Dictionary, result: Dictionary) -> void:
 		if not result.has(series) or result.get("task_errors", {}).has(task):
 			continue
 		var data := {series: Array(result[series])}
+		if task == "beats" and result.has("beat_bpm"):
+			data["beat_bpm"] = result.beat_bpm
 		for name: String in ["duration_ms", "tempo_engine", "engine", "tempo_anchor_ms", "accent_filter", "accent_sensitivity"]:
 			if result.has(name) and (name in ["duration_ms", "engine", "tempo_engine"]
 					or (task == "tempo" and name == "tempo_anchor_ms") or (task == "accents" and name.begins_with("accent_"))):
@@ -71,6 +59,9 @@ func store(id: String, options: Dictionary, result: Dictionary) -> void:
 	if DirAccess.rename_absolute(temporary, target) != OK:
 		DirAccess.remove_absolute(temporary)
 	_prune()
+
+func has_task(id: String, task: String, options: Dictionary) -> bool:
+	return _load_track(id).has(_key(task, options))
 
 func _load_track(id: String) -> Dictionary:
 	if id.is_empty():
@@ -99,7 +90,7 @@ static func _key(task: String, options: Dictionary) -> String:
 	var selected := str(options.get("tempo_engine", "native")) if task == "tempo" else engine
 	var model := str(options.get("model", "default")) if selected == engine else "default"
 	if selected == "native":
-		model = "default"
+		model = "flux" if task == "tempo" and options.get("capture_id") == "tempo" else "default"
 	elif selected == "essentia" and model != "degara":
 		model = "multifeature"
 	var sensitivity := int(options.get("accent_sensitivity", Analysis.DEFAULT_ACCENT_SENSITIVITY)) if task == "accents" else 0

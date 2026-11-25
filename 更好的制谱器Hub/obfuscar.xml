@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Obfuscator>
+  <Var name="InPath" value="." />
+  <Var name="OutPath" value="protected" />
+  <Var name="KeepPublicApi" value="true" />
+  <Var name="HideStrings" value="true" />
+  <Var name="OptimizeMethods" value="false" />
+  <Var name="RenameProperties" value="false" />
+  <Var name="SuppressIldasm" value="false" />
+  <Module file="RevelationHub.dll">
+    <!-- WPF resolves resource dictionaries, event handlers and named controls from compiled XAML. -->
+    <SkipType rx="^RevelationHub\.(App|MainWindow|HubTheme)$" skipMethods="true" skipFields="true" skipEvents="true" />
+    <!-- System.Text.Json binds positional constructors to the signed catalog and profile fields. -->
+    <SkipType rx="^RevelationHub\.(PackageFile|PackagePatch|FileIndex|HubOptions|Notice|NoticeFeed)$" skipMethods="true" skipProperties="true" />
+  </Module>
+</Obfuscator>

@@ -1,4 +1,11 @@
 {
+  "htdemucs": [
+    {
+      "path": "htdemucs_fp16weights.onnx",
+      "size": 165612636,
+      "sha256": "d05c269d0178d2a72ad484b10b11dd370193fc923201c3b27a99f848745db70a"
+    }
+  ],
   "madmom": [
     {
       "path": "beats/2015/beats_blstm_1.onnx",

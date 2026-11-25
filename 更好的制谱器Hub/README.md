@@ -4,7 +4,7 @@ Windows x64 版本管理器，使用 C#、WPF 和 .NET 10 LTS。MSI 按用户安
 
 ## 安装与下载
 
-从 [GitHub Releases](https://github.com/furinasdog/revelation-chart-editor-releases/releases) 下载 `Revelation-Hub-v1.4.0-x64.msi`。打开 Hub，选版本并点击「安装」。底栏显示下载来源和进度；校验和解压完成后按钮变为「启动」。取消下载会清理本次临时文件。卸载 Hub 会保留已安装的编辑器和用户谱面。
+从 [GitHub Releases](https://github.com/furinasdog/revelation-chart-editor-releases/releases) 下载 `Revelation-Hub-v1.5.0-x64.msi`。打开 Hub，选版本并点击「安装」。底栏显示下载来源和进度；校验和解压完成后按钮变为「启动」。取消下载会清理本次临时文件。卸载 Hub 会保留已安装的编辑器和用户谱面。
 
 Hub 优先从 GitHub 读取版本目录和发行附件。目录不可达时尝试 CDN 和代理，再使用签名缓存；安装包采用并行分段下载。传输中断时会在同一次安装中从已收到的位置继续，必要时切换镜像。每个版本的大小和 SHA-256 都来自用发行公钥验证的目录。通过校验后才解压到独立版本目录。
 
@@ -12,7 +12,7 @@ Hub 优先从 GitHub 读取版本目录和发行附件。目录不可达时尝�
 
 双击 MSI 会打开中文安装向导。点击「安装」后可查看当前步骤和进度，完成页可以选择开始菜单和桌面快捷方式。运行安装器可覆盖较早的 Hub 版本。
 
-Hub 启动时、每隔 6 小时以及点击「刷新版本」时检查更新。发现新版后会自动下载并校验，点击「重启并更新」可立即安装，也可在本次退出时安装。静默升级沿用已选的快捷方式。v1.1.2 及后续版本可以自动升级至 v1.4.0。使用 v1.1.1 或更早版本的用户需手动安装一次新版。左侧「问题反馈」在 Hub 内显示群内反馈方式。
+Hub 启动时、每隔 6 小时以及点击「刷新版本」时检查更新。发现新版后会自动下载并校验，点击「重启并更新」可立即安装，也可在本次退出时安装。静默升级沿用已选的快捷方式。v1.1.2 及后续版本可以自动升级至 v1.5.0。使用 v1.1.1 或更早版本的用户需手动安装一次新版。左侧「问题反馈」在 Hub 内显示群内反馈方式。
 
 新公告和可用版本在窗口中央弹出。点击侧栏「公告」可重看，普通操作结果仍从右侧弹出。Hub 从发行仓库 main 分支根目录的 `announcements.json` 读取纯文本公告。更新该文件即可发布公告，`items` 设为空数组即可撤下。离线时显示最近成功读取的公告。
 
@@ -28,11 +28,13 @@ Hub 启动时、每隔 6 小时以及点击「刷新版本」时检查更新。�
 
 ## 构建
 
-在 Windows 上安装 .NET 10 SDK 和 WiX 4。以下命令从本目录运行，`LICENSE` 是仓库根目录的 GPLv3 许可文件。
+发行构建使用 Obfuscar 2.2.50 重命名内部符号、编码程序集字符串，使用 AES-256-GCM 加密内嵌版本目录、清单和离线文档，然后将程序集封入自包含 EXE。解密材料随应用部署，在线更新仍由发行签名验证。构建日志与名称映射保留在本地构建目录。MSI 自更新使用发行方的 RSA 签名目录校验大小与 SHA-256。
+
+在 Windows 上安装 .NET 10 SDK、PowerShell 7.4 或更高版本和 WiX 4。以下命令从本目录运行，`LICENSE` 是仓库根目录的 GPLv3 许可文件。
 
 ```powershell
-dotnet publish RevelationHub.csproj -c Release -r win-x64 --self-contained true -o bin/publish
-wix build Installer.wxs -arch x64 -d "PublishDir=$PWD/bin/publish" -d "LicenseFile=$PWD/../LICENSE" -o bin/Revelation-Hub-v1.4.0-x64.msi
+dotnet publish RevelationHub.csproj -c Release -r win-x64 --self-contained true -p:ProtectHub=true -o bin/publish
+wix build Installer.wxs -arch x64 -d "PublishDir=$PWD/bin/publish" -d "LicenseFile=$PWD/../LICENSE" -o bin/Revelation-Hub-v1.5.0-x64.msi
 ```
 
 ## 维护发行目录
@@ -47,7 +49,7 @@ Hub 自有代码使用 GPL-3.0-only。发行仓库仅公开获授权开放的源
 
 ## 下载与可选 CUDA 支持
 
-版本包、增量包、模型及 Hub 更新优先从 GitHub 下载。支持 HTTP Range 的文件最多同时使用 8 个连接，空闲连接分担剩余较长的区间。断线重试从当前分段已写入的位置继续，必要时自动切换镜像。仅支持整文件传输的下载源使用单连接。底栏显示传输进度。
+版本包、增量包、madmom、Music2Emo 及 Hub 更新优先从 GitHub 下载。HTDemucs 从 Hugging Face 的固定版本下载，三类模型均校验 SHA-256。支持 HTTP Range 的文件最多同时使用 8 个连接，空闲连接分担剩余较长的区间。断线重试从当前分段已写入的位置继续，必要时自动切换镜像。仅支持整文件传输的下载源使用单连接。底栏显示传输进度。
 
 在「启动 → 已安装」的编辑器卡片上可选择「添加 CUDA 支持」或「卸载 CUDA 支持」。该版本有签名附加包时才会显示入口。修改前请先退出编辑器。没有附加包时，编辑器使用 CPU 进行 ONNX 推理。视频导出的 NVIDIA 硬件编码由显卡的 NVENC 编码器提供，可单独使用。
 

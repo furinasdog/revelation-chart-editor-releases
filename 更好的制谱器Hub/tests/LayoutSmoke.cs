@@ -29,7 +29,7 @@ internal partial class Program
             if (r.RequestUri.AbsolutePath.EndsWith("/announcements.json"))
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content=new StringContent(NoticeJson) });
             if (CatalogOnline && r.RequestUri.AbsolutePath.EndsWith("/catalog.signed.json"))
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content=new StreamContent(typeof(Distribution).Assembly.GetManifestResourceStream("RevelationHub.catalog.signed.json")) });
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content=new StreamContent(HubResources.Open("RevelationHub.catalog.signed.json")) });
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
         }
     }

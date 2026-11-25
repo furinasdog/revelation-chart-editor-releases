@@ -56,7 +56,7 @@ namespace RevelationHub
         }
         private static string Embedded(string name)
         {
-            using (var stream = typeof(Distribution).Assembly.GetManifestResourceStream("RevelationHub." + name))
+            using (var stream = HubResources.Open("RevelationHub." + name))
             using (var reader = new StreamReader(stream ?? throw new InvalidDataException("缺少内置发行信息。")))
                 return reader.ReadToEnd();
         }
@@ -175,7 +175,10 @@ namespace RevelationHub
             }
             var exe = Executable(version);
             if (!Installed(version)) throw new FileNotFoundException("安装文件缺失，请重新安装该版本。");
-            return Process.Start(new ProcessStartInfo(exe) { WorkingDirectory = Path.GetDirectoryName(exe), UseShellExecute = false })
+            var start = new ProcessStartInfo(exe) { WorkingDirectory = Path.GetDirectoryName(exe), UseShellExecute = false };
+            if (string.Equals(Path.GetFileName(Environment.ProcessPath), "RevelationHub.exe", StringComparison.OrdinalIgnoreCase))
+                start.Environment["AUTOREVELATION_HUB_EXE"] = Environment.ProcessPath;
+            return Process.Start(start)
                 ?? throw new InvalidOperationException("Windows 未能创建制谱器进程。");
         }
         internal sealed record RunningEditor(string Version, Process Process);

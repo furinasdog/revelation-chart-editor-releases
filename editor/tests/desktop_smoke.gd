@@ -34,7 +34,7 @@ func _run() -> void:
 	desktop._set_scale(1.0)
 	await process_frame
 	_check(is_equal_approx(desktop.rollout.size.x, editor.size.x), "Piano roll fills the width at 1080p")
-	_check(desktop._tabs.get_tab_control(desktop._tabs.current_tab).name == &"键设置", "Key settings are the initial inspector tab")
+	_check(desktop._tabs.current_tab == 0 and desktop._tabs.get_current_tab_control() == desktop._analysis_panel, "Capture is the first inspector tab")
 	_check(TranslationServer.get_locale() == "zh_CN", "Application uses the Simplified Chinese locale")
 	var analysis_menu: MenuButton = desktop._menu.get_child(0).get_child(3)
 	_check(analysis_menu.get_popup().get_theme_font_size("font_size") == analysis_menu.get_theme_font_size("font_size"), "Top menu titles and commands use the same size")
@@ -95,26 +95,20 @@ func _run() -> void:
 	_check(chart.rhythm_analysis.is_empty() and not desktop._analyzing, "Await confirmation before analyzing")
 	desktop._ask.hide()
 	desktop._ask.confirmed.emit()
-	_check(desktop.grid.reference_mode == 1, "Confirming automatic analysis switches to automatic tempo references")
-	_check(not desktop._tip_action.visible, "Import advice waits for a completed analysis")
 	var deadline := Time.get_ticks_msec() + 120000
 	while desktop._analyzing and Time.get_ticks_msec() < deadline:
 		await process_frame
 	_check(not desktop._analyzing, "Analysis completed")
-	_check(desktop._message.visible and desktop._message.dialog_text.contains("成功！"), "Import analysis shows its success dialog")
-	desktop._message.hide()
-	_check(desktop._tip_action.visible and desktop._tip_label.text.contains("修改抓音方式"), "Completed import analysis shows adjustable capture advice")
-	desktop._tip_action.pressed.emit()
-	_check(desktop._tabs.get_current_tab_control() == desktop._analysis_panel and desktop._analysis_panel._settings_toggle.button_pressed,
-		"Import advice opens and expands capture settings")
-	desktop._tabs.current_tab = inspector_page.get_index()
+	_check(chart.rhythm_analysis.get("capture_id") == "beat" and desktop.grid.reference_mode == 2, "Import applies only the selected beat capture")
+	_check(desktop._analysis_panel._run.text == "应用", "Completed capture can be applied again from cache")
+	desktop._open_inspector_page("键设置")
 	desktop._results_tabs.current_tab = 0
 	desktop._choose_tool(2)
 	_check(desktop._tip_label.text.contains("起点和终点"), "The tip follows the selected brush")
 	var report: Dictionary = chart.rhythm_analysis
 	var beats: Array = report.get("beats", [])
 	var points: Array = report.get("tempo_curve", [])
-	_check(beats.size() >= 20 and points.size() >= 20, "Rendered beat and tempo data from the original audio")
+	_check(beats.size() >= 20 and points.is_empty() and chart.has_project_bpm, "Beat-only capture supplies BPM without requesting a separate tempo curve")
 	if beats.is_empty():
 		print("ANALYSIS_FAILURE ", desktop._status.text, " ", desktop._message.dialog_text)
 		quit(1)
@@ -157,7 +151,7 @@ func _run() -> void:
 	chart.reset_rt_playback()
 	_check(desktop._tabs.current_tab == inspector_tab and chart.is_selected(note_id), "Transport preserves inspector and selection")
 	desktop._set_game_mode(false)
-	chart.set_rhythm_analysis(report)
+	chart.set_rhythm_analysis(synth)
 	_check(chart.apply_rhythm_curve() and chart.notes[note_id].end_time == judgement, "Applying tempo preserves existing judgement time")
 	var default_key: int = desktop.preferences.bindings["play"]
 	desktop.preferences.open("音频")
@@ -206,6 +200,8 @@ func _check_results_at_high_scale(desktop: Node) -> void:
 
 func _check_tutorial(desktop: Node, practice_audio: String) -> void:
 	var tutorial: Control = desktop._onboarding
+	var entry_capture: String = desktop._analysis_panel.selected_id
+	var entry_reference: int = desktop.sidebar.guide_mode
 	tutorial.open()
 	_check(tutorial._chooser.visible, "Help opens the tutorial experience picker")
 	tutorial._choose_experience("beginner")
@@ -216,7 +212,7 @@ func _check_tutorial(desktop: Node, practice_audio: String) -> void:
 	tutorial._theme.item_selected.emit(2)
 	_check(not desktop._ui_light, "Dark theme also applies immediately")
 	tutorial._complete_setup(false)
-	_check(not tutorial._chooser.visible and tutorial._panel.visible and tutorial._steps.size() == 15, "Beginners see the expanded guide")
+	_check(not tutorial._chooser.visible and tutorial._panel.visible and tutorial._steps.size() == 17, "Beginners see the expanded guide")
 	for i in range(3):
 		await process_frame
 	_check(tutorial._panel.size.y < 300, "The guide fits its contents at desktop resolution")
@@ -231,9 +227,25 @@ func _check_tutorial(desktop: Node, practice_audio: String) -> void:
 		"The import prompt opens analysis settings on request")
 	tutorial._check_progress()
 	_check(not tutorial._next.disabled, "Importing practice audio unlocks the next step")
-	for caption in ["传统量化", "自动速度", "抓取拍点"]:
-		tutorial._show_step(2 + ["传统量化", "自动速度", "抓取拍点"].find(caption))
-		_check(tutorial._title.text.contains(caption), "Guide explains " + caption)
+	tutorial._show_step(2)
+	tutorial._action.pressed.emit()
+	var capture: Control = desktop._analysis_panel
+	_check(capture.selected_id == "beat" and desktop._tabs.get_current_tab_control() == capture,
+		"Beat practice opens the capture tab and selects the beat model")
+	var before: Dictionary = desktop.chart.rhythm_analysis.duplicate(true)
+	tutorial._skip_step.pressed.emit()
+	tutorial._action.pressed.emit()
+	_check(capture.selected_id == "melody" and desktop.chart.rhythm_analysis == before and "应用" in tutorial._instruction.text,
+		"Trying another target in the cache exercise preserves the applied data")
+	tutorial._advance()
+	tutorial._action.pressed.emit()
+	_check(capture.selected_id == "tempo" and "BPM" in tutorial._instruction.text, "BPM practice selects the dedicated tempo option")
+	for caption in ["传统参考线", "自动采音线"]:
+		tutorial._advance()
+		tutorial._action.pressed.emit()
+		var mode := 0 if caption == "传统参考线" else 2
+		_check(tutorial._title.text == caption and desktop.sidebar.guide_mode == mode
+			and desktop._tabs.get_current_tab_control().name == &"参考线量化", "Guide switches the actual page and mode for " + caption)
 	tutorial._advance()
 	tutorial._action.pressed.emit()
 	_check(desktop.chart.current_tool_type == 0, "Tutorial action uses the normal brush command")
@@ -281,7 +293,21 @@ func _check_tutorial(desktop: Node, practice_audio: String) -> void:
 	tutorial._check_progress()
 	_check(not tutorial._next.disabled and FileAccess.file_exists(zip_path) and desktop._tip_label.text.contains("导出成功"),
 		"A real ZIP export completes the beginner route and reports success in the footer")
+	tutorial._next.pressed.emit()
+	_check(desktop._analysis_panel.selected_id == entry_capture and desktop.sidebar.guide_mode == entry_reference,
+		"Completing the tutorial restores the original capture and reference choices")
+	desktop._analysis_panel.select("melody")
+	desktop.sidebar.set_guide_mode(0)
+	tutorial.open_beginner()
+	desktop._open_inspector_page("自动采音")
+	desktop._analysis_panel.select("tempo")
+	desktop._open_inspector_page("参考线量化")
+	desktop.sidebar.set_guide_mode(2)
 	tutorial.close_guide()
+	_check(desktop._analysis_panel.selected_id == "melody" and desktop.sidebar.guide_mode == 0,
+		"Leaving midway restores the user's own pre-tutorial selections")
+	desktop._analysis_panel.select(entry_capture)
+	desktop.sidebar.set_guide_mode(entry_reference)
 	desktop._clear_chart()
 	tutorial.open()
 	tutorial._choose_experience("original")
@@ -304,10 +330,10 @@ func _check_tutorial(desktop: Node, practice_audio: String) -> void:
 	desktop._open_inspector_page("动画键")
 	desktop._open_feature_finder()
 	desktop._feature_finder._filter("力度重音")
-	_check(desktop._feature_finder._results.item_count > 0 and desktop._feature_finder._path.text.contains("自动抓音"), "Finder searches everyday terms")
+	_check(desktop._feature_finder._results.item_count > 0 and desktop._feature_finder._path.text.contains("自动采音"), "Finder searches everyday terms")
 	desktop._feature_finder._go()
 	await process_frame
 	await process_frame
-	_check(desktop._tabs.get_current_tab_control() == desktop._analysis_panel and desktop._analysis_panel._settings_toggle.button_pressed,
+	_check(desktop._tabs.get_current_tab_control() == desktop._analysis_panel and desktop._analysis_panel._run.is_visible_in_tree(),
 		"Finder can leave the animation tab and open actual analysis controls")
 	desktop._open_inspector_page("键设置")

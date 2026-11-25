@@ -35,6 +35,8 @@ var _scheme_explicit := false
 var _sample: Control
 var _comparison: Label
 var _guide_kind := ""
+var _original_capture := ""
+var _original_reference := Chart.ReferenceMode.TRADITIONAL
 var _heard := false
 var _exported := false
 var _active_task := ""
@@ -336,20 +338,26 @@ func _button(label: String, callback: Callable) -> Button:
 func _beginner_steps() -> Array[Dictionary]:
 	return [
 		_step("导入你的第一首歌",
-			"点「导入音频」选一首歌，也可把 MP3、WAV 或 OGG 拖进来。弹窗可以先点「暂不分析」，立即开始放键。",
+			"点「导入音频」选一首歌，也可把 MP3、WAV 或 OGG 拖进来。导入后可以先练习采音，也可以直接放键。",
 			_file_menu(), "导入音频", _workspace._open_audio_dialog, "audio", "导入歌曲后可继续。"),
 		_step("认识卷帘和检查器",
 			"下方卷帘从左到右是时间，一行是一条轨道。左上检查器修改音符属性，页签找不到时点「全部页签」。右上是预览。",
 			_workspace._inspector_heading, "打开键设置", _workspace._open_inspector_page.bind("键设置")),
-		_step("传统量化 · 已知歌曲速度",
-			"知道歌曲的 BPM 时，在「参考线量化」填写速度和拍内细分，变速处可添加节点。打开「时间吸附」，放键或拖动就会对齐这套网格。",
-			_workspace._mode_choice, "试用传统量化", _workspace.sidebar.set_guide_mode.bind(0)),
-		_step("自动速度 · 跟随歌曲变速",
-			"还不确定 BPM 时，到「自动抓音」分析「拍点与速度」。选择「自动速度」，蓝线按分析出的速度曲线标出整拍，每拍再分四格，适合放在拍间的音符。",
-			_workspace._mode_choice, "查看自动速度网格", _workspace.sidebar.set_guide_mode.bind(1)),
-		_step("抓取拍点 · 对准实际鼓声",
-			"在「自动抓音」把拍点、起音或力度重音映射到时间轴。切到「抓取拍点」后，时间吸附只对齐这些金色标记，标记之间没有细分格。前两种模式也能叠加显示这些标记。",
-			_workspace._mode_choice, "只对齐抓取拍点", _workspace.sidebar.set_guide_mode.bind(2)),
+		_step("单选节拍并采音",
+			"打开「自动采音」，选中「节拍（Beat This!）」。每行是一个采音内容和模型组合，一次只选一行。点面板底部「采音」查看节拍。这首歌已有该项缓存时点「应用」。",
+			_workspace._analysis_panel, "选择节拍", _select_capture.bind("beat"), "capture_beat", "在自动采音页采音或应用节拍后继续。"),
+		_step("按灵敏度应用缓存",
+			"先试着选「主旋律」，卷帘会保留上次的节拍。再选回刚才的节拍，调节灵敏度，点「应用」更新标记。不同模型各自缓存。想看主旋律时可以单独采音。",
+			_workspace._analysis_panel, "选择主旋律", _select_capture.bind("melody")),
+		_step("检查工程 BPM",
+			"节拍采音取得速度时会自动填入空缺的工程 BPM。若 BPM 仍为空，在「自动采音」单选 BPM 项，再点底部「采音」或「应用」。",
+			_workspace._analysis_panel, "选择 BPM", _select_capture.bind("tempo")),
+		_step("传统参考线",
+			"到「参考线量化」选择「传统参考线」。网格按「谱面信息」中的 BPM、变速节点和拍内细分显示。打开卷帘上沿的「时间吸附」后可沿网格放键。",
+			_workspace._mode_choice, "显示传统参考线", _show_reference.bind(Chart.ReferenceMode.TRADITIONAL)),
+		_step("自动采音线",
+			"在同一页切换为「自动采音线」，对照刚才已应用的节拍放键。想换一组标记时，返回「自动采音」选另一行，再点「采音」或「应用」。",
+			_workspace._mode_choice, "显示自动采音线", _show_reference.bind(Chart.ReferenceMode.BEATS)),
 		_step("放置第一个键",
 			"选「普通键」，在波形下方的空白轨道单击。放长键时，在同一轨道依次点起点和终点。",
 			_workspace._tools[0], "选择普通键", _workspace._choose_tool.bind(0), "place", "在卷帘里放下一个键后继续。"),
@@ -395,18 +403,26 @@ func _original_steps() -> Array[Dictionary]:
 			"工具移到卷帘上沿。当前方案用%s移动，用%s。单独长按右键可切换工具。" % [_workspace.preferences.move_gesture(), _workspace.preferences.selection_gesture()],
 			_workspace._rail, "切到选择工具", _workspace._choose_tool.bind(-1)),
 		_step("时间轴参考线与吸附",
-			"卷帘上沿选择传统量化、自动速度或抓取拍点。原版的拍内细分和变速节点仍在「参考线量化」。波形设置已移到偏好设置。",
+			"在「参考线量化」切换「传统参考线」或「自动采音线」。传统参考线沿用工程 BPM、拍内细分与变速节点。自动采音线显示上次应用的采音标记。",
 			_workspace._track_bar, "打开参考线量化", _workspace._open_inspector_page.bind("参考线量化")),
 		_step("画面位置与试玩",
 			"在预览区用%s改位置，右上的「位置吸附」独立于时间吸附。「预览控制」里可循环或试玩，试玩后点「返回编辑」。" % _workspace.preferences.move_gesture(),
 			_workspace._result_heading, "显示谱面预览", _show_preview),
-		_step("自动抓音与新设置",
-			"「自动抓音」能分析拍点、起音或主旋律。已有起音可拖动灵敏度重筛。音频输出和启动音效在偏好设置的「音频」页。",
-			_workspace._inspector_heading, "打开自动抓音", _workspace._open_analysis_settings),
+		_step("自动采音与缓存",
+			"在「自动采音」单选一项。首次点「采音」，有缓存时调整灵敏度后点「应用」。仅换选项会保留卷帘上的结果。",
+			_workspace._inspector_heading, "打开自动采音", _workspace._open_inspector_page.bind("自动采音")),
 		_step("查找导出和其他入口",
 			"从「文件」保存或导出 ZIP，渲染视频也在同一菜单。以后可在右下角打开「功能速查」，搜索歌词、动画、吸附或旧功能名称。",
 			_file_menu(), "打开功能速查", _workspace._open_feature_finder),
 	]
+
+func _select_capture(id: String) -> void:
+	_workspace._open_inspector_page("自动采音")
+	_workspace._analysis_panel.select(id)
+
+func _show_reference(mode: int) -> void:
+	_workspace._open_inspector_page("参考线量化")
+	_workspace.sidebar.set_guide_mode(mode)
 
 func _show_preview() -> void:
 	_workspace._set_game_mode(false)
@@ -423,6 +439,9 @@ func _step(title: String, instruction: String, target: Control, action_text := "
 		"action": action, "task": task, "hint": hint}
 
 func _start(steps: Array[Dictionary]) -> void:
+	if _steps.is_empty():
+		_original_capture = _workspace._analysis_panel.selected_id
+		_original_reference = _workspace.sidebar.guide_mode
 	_steps = steps
 	_active_task = ""
 	_show_step(0)
@@ -466,6 +485,9 @@ func _run_action() -> void:
 func close_guide() -> void:
 	_panel.hide()
 	_highlight = Rect2()
+	if not _steps.is_empty():
+		_workspace._analysis_panel.select(_original_capture)
+		_workspace.sidebar.set_guide_mode(_original_reference)
 	_steps.clear()
 	_active_task = ""
 	_note_positions.clear()
@@ -481,6 +503,7 @@ func _check_progress() -> void:
 	var ready := true
 	match _active_task:
 		"audio": ready = not chart.audio_path.is_empty()
+		"capture_beat": ready = chart.rhythm_analysis.get("capture_id", "") == "beat"
 		"place", "slide": ready = _practice_note_placed
 		"move": ready = _practice_note_moved
 		"play":

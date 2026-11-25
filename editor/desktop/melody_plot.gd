@@ -22,7 +22,7 @@ func _draw() -> void:
 		draw_string(font, Vector2(2, y + 4), "%d" % hz, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, EditorTheme.tone("ink"))
 	draw_string(font, Vector2(2, area.end.y + 15), "赫兹", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, EditorTheme.tone("ink"))
 	if _points.is_empty() or _duration <= 0:
-		draw_string(font, area.position + Vector2(12, 22), "请在「自动抓音」中使用 Essentia 推理主旋律。",
+		draw_string(font, area.position + Vector2(12, 22), "请在「自动采音」中选择主旋律，再点「采音」或「应用」。",
 			HORIZONTAL_ALIGNMENT_LEFT, area.size.x - 20, 13, EditorTheme.tone("ink"))
 		return
 	var previous := Vector2.INF

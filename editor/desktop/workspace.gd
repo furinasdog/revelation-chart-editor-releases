@@ -1,5 +1,7 @@
 extends Node
 
+signal models_refreshed
+
 const DialogLayout := preload("res://desktop/dialog_layout.gd")
 
 const DesktopFileDialog := preload("res://desktop/desktop_file_dialog.gd")
@@ -9,8 +11,9 @@ const AgentAudio := preload("res://desktop/agent_audio.gd")
 const AgentAnimation := preload("res://desktop/agent_animation.gd")
 const BackgroundTimeline := preload("res://desktop/background_timeline.gd")
 const AudioCache := preload("res://desktop/audio_analysis_cache.gd")
+const CaptureCatalog := preload("res://desktop/capture_catalog.gd")
 const EmotionResults := preload("res://desktop/emotion_results.gd")
-const EmotionModelDownload := preload("res://desktop/emotion_model_download.gd")
+const ManagedModels := preload("res://desktop/managed_models.gd")
 const TempoPlot := preload("res://desktop/tempo_plot.gd")
 const EditorLabels := preload("res://desktop/editor_labels.gd")
 const ReferenceMode = preload("res://main/chart_data.gd").ReferenceMode
@@ -20,6 +23,8 @@ const VideoExport := preload("res://desktop/video_export.gd")
 const VideoExportDialog := preload("res://desktop/video_export_dialog.gd")
 const Onboarding := preload("res://desktop/onboarding.gd")
 const AnalysisPanel := preload("res://desktop/analysis_panel.gd")
+const StemSeparation := preload("res://desktop/stem_separation.gd")
+const StemMonitor := preload("res://desktop/stem_monitor.gd")
 const MelodyPlot := preload("res://desktop/melody_plot.gd")
 const EditorTheme := preload("res://desktop/editor_theme.gd")
 const About := preload("res://desktop/about.gd")
@@ -39,7 +44,7 @@ const TIP_BAR_HEIGHT := 36.0
 const GAP := 5.0
 const PANE := Color("#202734")
 const MUTED := Color("#a9b6c9")
-const IMPORT_ANALYSIS_TIP := "抓音结果不符合要求时，可在「检查器 → 自动抓音」修改抓音方式。"
+
 const BRUSH_TIPS := {
 	0: "在卷帘轨道内单击，放置普通键。",
 	1: "单击放置黄键（滑键）。选中后可在「移动路径与缓动」设置滑动终点。",
@@ -72,10 +77,6 @@ var analysis: Node
 var _audio_cache := AudioCache.new()
 var _analysis_audio_id := ""
 var _analysis_dialog: Window
-var _madmom_download_dialog: Window
-var _madmom_download_label: Label
-var _madmom_download_file: ProgressBar
-var _madmom_download_total: ProgressBar
 var _analysis_progress_stage: Label
 var _analysis_progress_meter: ProgressBar
 var _chart_analysis_id := ""
@@ -93,11 +94,8 @@ var _frequency: PanelContainer
 var _emotion_panel: PanelContainer
 var _emotion: VBoxContainer
 var _emotion_feedback := ""
-var _emotion_download := EmotionModelDownload.new()
-var _emotion_download_dialog: Window
-var _emotion_download_stage: Label
-var _emotion_download_meter: ProgressBar
-var _emotion_download_cancel: Button
+var _model_help: ConfirmationDialog
+var _help_model := ""
 var _spectrum_image: TextureRect
 var _spectrum_caption: Label
 var _spectrum_button: Button
@@ -105,6 +103,8 @@ var _spectrum_audio := ""
 var _melody_plot: Control
 var _frequency_tabs: TabContainer
 var _analysis_panel: Control
+var _stem_separation := StemSeparation.new()
+var _stem_monitor := StemMonitor.new()
 var _status: Label
 var _plot_title: Label
 var _frequency_feedback: Label
@@ -114,7 +114,6 @@ var _zoom: HSlider
 var _plot: Control
 var _apply_bpm: Button
 var _analyze: Button
-var _toggle_beats: CheckButton
 var _tools: Dictionary = {}
 var _event_tools: MenuButton
 var _tool_entries: Array
@@ -137,14 +136,11 @@ var _message: AcceptDialog
 var _analyzing := false
 var _document_generation := 0
 var _analysis_generation := 0
-var _analysis_from_import := false
 var _analysis_request := {}
 var _analysis_title := ""
 var _analysis_details := ""
 var _analysis_tip_context := ""
 var _latest_tempo := false
-var _guide_before_import := ReferenceMode.TRADITIONAL
-var _import_tip_context := ""
 var _screen_poll := 0.0
 var _screen_pixels := Vector2i.ZERO
 var _screen_dpi := 96
@@ -158,7 +154,6 @@ var _save_folder: DesktopFileDialog
 var _save_folder_generation := -1
 var _inspector_title: Label
 var _mode_choice: OptionButton
-var _marker_switch: CheckButton
 var _time_snap: CheckButton
 var _position_snap: CheckButton
 var _canvas_place: Button
@@ -176,7 +171,6 @@ var _play_button: Button
 var _transport_status: Label
 var _tips_bar: PanelContainer
 var _tip_label: Label
-var _tip_action: Button
 var _file_feedback := ""
 var _file_feedback_until := 0
 var _loop_switch: CheckButton
@@ -210,7 +204,6 @@ func attach(editor: Control) -> void:
 	_onboarding = Onboarding.new()
 	add_child(preferences)
 	add_child(analysis)
-	add_child(_emotion_download)
 	add_child(automatic)
 	automatic.setup(self)
 	copilot = CoPilot.new()
@@ -233,8 +226,6 @@ func attach(editor: Control) -> void:
 		diagnostics.record("preview.playback", {"action": action, "time_ms": roundi(chart.rt_play_time)}))
 	analysis.completed.connect(_on_analysis_complete)
 	analysis.progress.connect(_show_analysis_stage)
-	analysis.madmom_download_progress.connect(_show_madmom_download)
-	analysis.madmom_download_finished.connect(_hide_madmom_download)
 	preferences.import_audio_requested.connect(_open_audio_dialog)
 	preferences.scale_changed.connect(_set_scale)
 	preferences.bindings_changed.connect(_update_menu_shortcuts)
@@ -254,9 +245,9 @@ func attach(editor: Control) -> void:
 	_copilot_divider = _splitter(false, true)
 	host.get_window().focus_exited.connect(_finish_splitter_drag)
 	chart.audio_changed.connect(func():
-		_import_tip_context = ""
 		_emotion_feedback = ""
 		_file_feedback = ""
+		_analysis_panel.last_capture_source = ""
 		_clear_analysis_feedback()
 		_refresh_audio()
 		_refresh_analysis())
@@ -387,10 +378,10 @@ func _build_menu() -> void:
 		["手序与引导预览…", _open_hand_guide],
 	])
 	_add_menu(row, "分析", [
-		["自动抓音设置", _open_analysis_settings],
+		["自动采音设置", _open_analysis_settings],
 		["分析 RMVPE 人声音高", _analyze_vocal_pitch],
 		["按当前设置分析", _request_analysis], ["写入谱面速度", _apply_curve],
-		["显示 / 隐藏拍点", _toggle_beat_visibility],
+		["试听采音标记", _audition_analysis],
 	])
 	_copilot_menu = _add_menu(row, "工具", [
 		[CoPilot.TITLE, _toggle_copilot], ["MCP 服务器…", mcp.open], ["Agent 设置…", automatic.open_settings], [],
@@ -590,16 +581,19 @@ func _build_inspector() -> void:
 	_mount_preview_tools()
 	_build_background_inspector()
 	_analysis_panel = AnalysisPanel.new()
-	_analysis_panel.name = "自动抓音"
+	_analysis_panel.name = "自动采音"
 	_tabs.add_child(_analysis_panel)
-	_analysis_panel.setup(preferences, chart)
+	_tabs.move_child(_analysis_panel, 0)
+	_analysis_panel.setup(preferences, chart, _stem_monitor)
+	add_child(_stem_separation)
+	_stem_monitor.setup(_stem_separation, chart, preferences)
+	_stem_separation.model_required.connect(_show_model_help.bind("htdemucs"))
+	models_refreshed.connect(_stem_separation.refresh)
 	_analysis_panel.run_requested.connect(_request_analysis)
-	_analysis_panel.spectrum_requested.connect(_request_spectrum)
-	_analysis_panel.audition_requested.connect(_audition_analysis)
-	_analysis_panel.reference_requested.connect(_use_analysis_reference)
-	_analysis_panel.tempo_write_requested.connect(_apply_curve)
-	_analysis_panel.loop_requested.connect(func(): _loop_switch.button_pressed = not _loop_switch.button_pressed)
-	_analysis_panel.accent_sensitivity_changed.connect(_refilter_accents)
+	_analysis_panel.selection_changed.connect(_refresh_analysis)
+	sidebar.capture_page_requested.connect(func(target: String):
+		_open_analysis_settings()
+		_analysis_panel.select(target))
 	_inspector_heading = _box("InspectorHeader")
 	var heading := HBoxContainer.new()
 	_inspector_heading.add_child(heading)
@@ -619,7 +613,7 @@ func _build_inspector() -> void:
 		for i in range(pages.item_count):
 			pages.set_item_checked(i, i == _tabs.current_tab))
 	pages.id_pressed.connect(func(index: int): sidebar.open_settings_tab(index))
-	_tabs.current_tab = _tabs.get_node("键设置").get_index()
+	_tabs.current_tab = _analysis_panel.get_index()
 	_tabs.tab_changed.connect(func(_index: int): _refresh_tip())
 	_tabs.tab_changed.connect(func(_index: int):
 		var active := _tabs.get_current_tab_control() == _background_page
@@ -911,17 +905,12 @@ func _build_track_bar() -> void:
 	row.add_child(_label("参考线", 12))
 	_mode_choice = OptionButton.new()
 	_mode_choice.tooltip_text = "参考模式"
-	for caption in ["传统量化", "自动速度", "抓取拍点"]:
-		_mode_choice.add_item(caption)
-	_mode_choice.set_item_tooltip(0, "按手动 BPM、变速节点和拍内细分对齐")
-	_mode_choice.set_item_tooltip(1, "按分析得到的速度曲线对齐，每拍四格")
-	_mode_choice.set_item_tooltip(2, "只对齐映射到时间轴的金色标记")
-	_mode_choice.item_selected.connect(sidebar.set_guide_mode)
+	_mode_choice.add_item("传统参考线", ReferenceMode.TRADITIONAL)
+	_mode_choice.add_item("自动采音线", ReferenceMode.BEATS)
+	_mode_choice.set_item_tooltip(0, "按工程 BPM、变速节点和拍内细分对齐")
+	_mode_choice.set_item_tooltip(1, "显示上一次采音或应用的结果")
+	_mode_choice.item_selected.connect(func(index: int): sidebar.set_guide_mode(_mode_choice.get_item_id(index)))
 	row.add_child(_mode_choice)
-	_marker_switch = CheckButton.new()
-	_marker_switch.text = "显示抓取拍点"
-	_marker_switch.toggled.connect(sidebar.set_guide_beat_visibility)
-	row.add_child(_marker_switch)
 	_time_snap = CheckButton.new()
 	_time_snap.text = "时间吸附"
 	_time_snap.tooltip_text = "将放键和拖动对齐到当前参考线"
@@ -1042,12 +1031,7 @@ func _build_results() -> void:
 	column.add_child(_plot)
 	var bottom := HBoxContainer.new()
 	column.add_child(bottom)
-	_toggle_beats = CheckButton.new()
-	_toggle_beats.text = "显示拍点"
-	_toggle_beats.button_pressed = true
-	_toggle_beats.toggled.connect(sidebar.set_guide_beat_visibility)
-	bottom.add_child(_toggle_beats)
-	bottom.add_child(_button("用作编辑参考", _use_analysis_reference))
+	bottom.add_child(_button("打开自动采音", _open_analysis_settings))
 	_apply_bpm = _button("写入谱面速度", _apply_curve)
 	bottom.add_child(_apply_bpm)
 	_build_frequency_panel()
@@ -1059,9 +1043,7 @@ func _build_results() -> void:
 	_emotion.setup()
 	_emotion.analyze_requested.connect(_request_emotion)
 	_emotion.models_requested.connect(_open_emotion_models)
-	_emotion.download_requested.connect(_toggle_emotion_download)
-	_emotion_download.progress.connect(_show_emotion_download_progress)
-	_emotion_download.completed.connect(_finish_emotion_download)
+	_emotion.hub_requested.connect(_show_model_help.bind("music2emo"))
 	_emotion.segment_chosen.connect(func(time: int):
 		chart.set_rt_pointer_time(time)
 		grid._auto_scroll_to_ms(time))
@@ -1191,11 +1173,11 @@ func _build_dialogs() -> void:
 	_ask.ok_button_text = "自动分析"
 	_ask.cancel_button_text = "暂不分析"
 	_ask.about_to_popup.connect(_describe_import_analysis)
-	_ask.confirmed.connect(_request_analysis.bind(true))
+	_ask.confirmed.connect(_request_analysis)
 	_ask.add_button("调整分析设置", true, "settings")
 	_ask.custom_action.connect(func(_action: StringName):
 		_ask.hide()
-		_open_analysis_settings(true))
+		_open_analysis_settings())
 	host.add_child(_ask)
 	_message = AcceptDialog.new()
 	host.add_child(_message)
@@ -1239,30 +1221,20 @@ func _build_tips() -> void:
 	_tip_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	_tip_label.mouse_filter = Control.MOUSE_FILTER_PASS
 	row.add_child(_tip_label)
-	_tip_action = _button("打开自动抓音", _open_analysis_settings.bind(true))
-	_tip_action.hide()
-	row.add_child(_tip_action)
-	row.add_child(_button("功能速查", _open_feature_finder))
 	_tips_bar.minimum_size_changed.connect(func(): apply_layout.call_deferred())
 
 func _refresh_tip() -> void:
 	if not _tip_label:
 		return
 	var context := _context_tip()
-	if context != _import_tip_context:
-		_import_tip_context = ""
 	if context != _analysis_tip_context:
 		_analysis_tip_context = ""
-	var show_import_tip := not _import_tip_context.is_empty()
-	_tip_label.text = IMPORT_ANALYSIS_TIP if show_import_tip else context
-	if not _analysis_tip_context.is_empty() and not show_import_tip:
-		_tip_label.text = _analysis_title
+	_tip_label.text = context if _analysis_tip_context.is_empty() else _analysis_title
 	if not _file_feedback.is_empty() and not _analyzing:
 		_tip_label.text = _file_feedback
 	_tip_label.tooltip_text = _tip_label.text
 	if not _analysis_tip_context.is_empty() and not _analysis_details.is_empty():
 		_tip_label.tooltip_text += "\n" + _analysis_details
-	_tip_action.visible = show_import_tip
 
 func show_file_feedback(message: String) -> void:
 	if not _tip_label:
@@ -1273,15 +1245,13 @@ func show_file_feedback(message: String) -> void:
 
 func _context_tip() -> String:
 	if _analyzing:
-		if _analysis_request.has("accent_input"):
-			return "正在读取已有标记附近的音频能量。"
 		return "正在分析音频。完成后可试听抓取结果。"
 	if _empty.visible:
 		return "拖入音频开始制谱，或拖入已有谱面继续编辑。"
 	if _tabs.current_tab == _analysis_panel.get_index():
-		return "选择分析目标，或展开「分析设置」修改抓音方式，再点「重新推理」。"
+		return "选择采音内容和模型，再点「采音」或「应用」。"
 	match _results_tabs.current_tab:
-		1: return "「用作编辑参考」更新参考线。「写入谱面速度」保存速度变化。"
+		1: return "在「自动采音」选择时间轴上要显示的结果。「写入谱面速度」可保存速度变化。"
 		2: return "在「频谱」查看各频率的能量，也可切换到「主旋律」。"
 	if chart.desktop_game_mode:
 		return "点击预览右上的「返回编辑」，继续调整音符。"
@@ -1295,7 +1265,6 @@ func _context_tip() -> String:
 	if chart.timeline_snap_enabled:
 		match grid.reference_mode:
 			ReferenceMode.TRADITIONAL: tip += " 时间吸附对齐手动速度网格。"
-			ReferenceMode.AUTO_TEMPO: tip += " 时间吸附对齐自动速度参考线。"
 			ReferenceMode.BEATS: tip += " 时间吸附对齐抓取的标记。"
 	return tip
 
@@ -1609,24 +1578,11 @@ func _toggle_loop(enabled: bool) -> void:
 	if enabled and chart.rt_playing and (chart.rt_play_time < _loop_range.x or chart.rt_play_time >= _loop_range.y):
 		_play_at(_loop_range.x)
 
-func _use_analysis_reference() -> void:
-	if chart.rhythm_analysis.is_empty():
-		_notify("请先分析音频。")
-		return
-	var mapping: String = chart.analysis_mapping
-	if mapping != "beats" and not chart.rhythm_analysis.get(mapping, []).is_empty():
-		sidebar.set_guide_mode(ReferenceMode.BEATS)
-	elif not chart.rhythm_analysis.get("tempo_curve", []).is_empty():
-		sidebar.set_guide_mode(ReferenceMode.AUTO_TEMPO)
-	else:
-		sidebar.set_guide_mode(ReferenceMode.BEATS)
-
 func _audition_analysis() -> void:
 	if _audition:
 		chart.pause_rt_playback()
 		return
-	var key: String = chart.analysis_mapping
-	if chart.rhythm_analysis.get(key, []).is_empty():
+	if chart.applied_capture_markers().is_empty():
 		_notify("当前标记没有分析结果。请先完成推理。")
 		return
 	if _metronome.is_empty():
@@ -1684,7 +1640,8 @@ func _refresh_audio() -> void:
 			_spectrum_image.texture = null
 			_spectrum_audio = ""
 	if _analysis_panel:
-		_analysis_panel.update_status(not name.is_empty(), _analyzing, chart.rhythm_analysis, chart.analysis_mapping)
+		_update_capture_panel()
+		_stem_monitor.sync_audio()
 	_refresh_empty()
 
 func _refresh_analysis() -> void:
@@ -1695,9 +1652,8 @@ func _refresh_analysis() -> void:
 	_plot.set_data(points, float(data.get("duration_ms", chart.audio_duration_ms)))
 	_melody_plot.set_data(data.get("melody", []), float(data.get("duration_ms", chart.audio_duration_ms)))
 	var emotion_ready := _has_emotion_models()
-	preferences.set_emotion_models_available(emotion_ready)
 	_emotion.refresh(chart, emotion_ready, _analyzing, _emotion_feedback)
-	_analysis_panel.update_status(not chart.audio_path.is_empty(), _analyzing, data, chart.analysis_mapping)
+	_update_capture_panel()
 	_apply_bpm.disabled = points.is_empty()
 	var feedback := _analysis_title
 	if not _analysis_details.is_empty():
@@ -1735,7 +1691,7 @@ func _refresh_plot_pointer() -> void:
 		return
 	if _audition:
 		var current: float = _plot.pointer_ms
-		var hits: Array = chart.rhythm_analysis.get(chart.analysis_mapping, [])
+		var hits: Array = chart.applied_capture_markers()
 		var downbeats: Array = chart.rhythm_analysis.get("downbeats", [])
 		var first := hits.bsearch(_audition_last_ms, false)
 		var last := hits.bsearch(current, false)
@@ -1744,16 +1700,10 @@ func _refresh_plot_pointer() -> void:
 			_metronome[int(is_downbeat)].play()
 		_audition_last_ms = current
 
-func _toggle_beat_visibility() -> void:
-	sidebar.set_guide_beat_visibility(not sidebar.guide_beats_visible())
-
-func _on_guide_mode_changed(mode: int, show_beats: bool) -> void:
-	grid.set_reference_mode(mode, show_beats)
-	_mode_choice.select(mode)
-	_marker_switch.disabled = mode == ReferenceMode.BEATS
-	_marker_switch.set_pressed_no_signal(mode == ReferenceMode.BEATS or show_beats)
-	_toggle_beats.visible = mode != ReferenceMode.BEATS
-	_toggle_beats.set_pressed_no_signal(show_beats)
+func _on_guide_mode_changed(mode: int) -> void:
+	grid.set_reference_mode(mode)
+	_mode_choice.select(_mode_choice.get_item_index(mode))
+	_update_capture_panel()
 	_refresh_tip()
 
 func _style_scrollbar() -> void:
@@ -2105,52 +2055,79 @@ func _ensure_default_images() -> void:
 			chart.preview_mask_image_path = "black_cover.png"
 
 func _describe_import_analysis() -> void:
-	var labels := _analysis_targets(_requested_audio_analysis().tasks)
-	_ask.get_ok_button().disabled = labels.is_empty()
-	_ask.dialog_text = "按当前设置分析%s？" % labels
-	if labels.is_empty():
-		_ask.dialog_text = "当前未选择分析内容。可在「检查器 → 自动抓音」中选择。"
+	var item := _requested_audio_analysis()
+	var fingerprint := _audio_cache.fingerprint(chart.resolve_audio_path(chart.audio_path))
+	var cached := _audio_cache.has_task(fingerprint, item.tasks[0], item)
+	_ask.ok_button_text = "应用" if cached else "采音"
+	_ask.dialog_text = "%s「%s」？" % [_ask.ok_button_text, CaptureCatalog.ENTRIES[item.capture_id].label]
 
 func _requested_audio_analysis() -> Dictionary:
-	var options: Dictionary = _analysis_panel.options()
-	if _auto_emotion_enabled():
-		options.tasks.append("emotions")
-	return options
+	return _analysis_panel.options()
 
-func _request_analysis(from_import := false) -> void:
+func _capture_cache_status() -> Dictionary:
+	var hits := {}
+	if chart.audio_path.is_empty():
+		return hits
+	var fingerprint := _audio_cache.fingerprint(chart.resolve_audio_path(chart.audio_path))
+	for id: String in CaptureCatalog.ENTRIES:
+		var item := CaptureCatalog.options(id)
+		hits[id] = _audio_cache.has_task(fingerprint, item.tasks[0], item)
+	return hits
+
+func _update_capture_panel() -> void:
+	_analysis_panel.showing_capture_lines = sidebar.guide_mode == ReferenceMode.BEATS
+	_analysis_panel.update_status(not chart.audio_path.is_empty(), _analyzing, _capture_cache_status(),
+		str(chart.rhythm_analysis.get("capture_id", "")), str(_analysis_request.get("capture_id", "")) if _analyzing else "")
+
+func _request_analysis() -> void:
+	if _analyzing or chart.audio_path.is_empty():
+		return
 	var options := _requested_audio_analysis()
-	if options.tasks.is_empty():
-		_notify("未选择分析内容。请在「检查器 → 自动抓音」中选择分析项。")
+	var path: String = chart.resolve_audio_path(chart.audio_path)
+	var id := _audio_cache.fingerprint(path, true)
+	if id.is_empty():
+		_notify("无法读取当前工程的音频。")
 		return
-	if not from_import:
-		_start_analysis(options)
+	var cached := _audio_cache.lookup(id, options)
+	if cached.missing.is_empty():
+		_apply_capture(options, cached, id, true)
 		return
-	var generation := _document_generation
-	if "tempo" in options.tasks:
-		_guide_before_import = grid.reference_mode
-		sidebar.set_guide_mode(ReferenceMode.AUTO_TEMPO)
-	options["visible_progress"] = true
-	_emotion_options(options)
-	var audio_id := _audio_cache.fingerprint(chart.resolve_audio_path(chart.audio_path))
-	var result := await _analyze_for_agent(options)
-	if generation == _document_generation:
-		_analysis_audio_id = audio_id
-		_apply_rhythm_result(options, result, true)
+	if options.engine == "madmom" and not ManagedModels.madmom_ready(
+			ManagedModels.directory("madmom", options.get("madmom_model_cache", "")), options.tasks, options.model):
+		_show_model_help("madmom")
+		return
+	_start_analysis(options)
+
+func _apply_capture(options: Dictionary, result: Dictionary, fingerprint: String, from_cache := false) -> void:
+	var task: String = options.tasks[0]
+	var series: String = Analysis.RESULT_KEYS[task]
+	var failure: String = result.get("task_errors", {}).get(task, result.get("error", ""))
+	if not failure.is_empty() or not result.has(series):
+		_show_analysis_feedback("采音失败", failure if not failure.is_empty() else "引擎未返回所选项目。")
+		return
+	var merged := CaptureCatalog.applied_result(options, result, _chart_music_at(fingerprint),
+		chart.audio_rms_waveform, chart.audio_waveform_bucket_ms)
+	_chart_analysis_id = fingerprint
+	var bpm := CaptureCatalog.detected_bpm(task, result)
+	if bpm > 0 and (not chart.has_project_bpm or (task == "tempo" and not is_equal_approx(chart.bpm, bpm))):
+		chart.set_bpm(bpm)
+	_clear_analysis_feedback()
+	_latest_tempo = task == "tempo" and bpm > 0
+	var label: String = CaptureCatalog.ENTRIES[options.capture_id].label
+	_analysis_title = "%s · %.1f BPM" % [label, bpm] if _latest_tempo else "%s · %d 个标记" % [label, merged.capture_markers.size()]
+	if not chart.has_project_bpm:
+		_analysis_details = "工程缺少 BPM，请在「自动采音」选择 BPM 并采音。"
+	_analysis_panel.last_capture_source = "cache" if from_cache else "inference"
+	diagnostics.record("analysis.apply", {"capture_id": options.capture_id, "source": _analysis_panel.last_capture_source,
+		"raw": result[series].size(), "markers": merged.capture_markers.size(), "sensitivity": options.sensitivity})
+	chart.set_rhythm_analysis(merged)
+	_refresh_analysis()
 
 func _emotion_model_path() -> String:
-	if not preferences.emotion_models.is_empty():
-		return preferences.emotion_models
-	var configured := OS.get_environment("AUTOREVELATION_MUSIC2EMO_MODELS")
-	if not configured.is_empty():
-		return configured
-	return (EmotionModelDownload.MODEL_DIRECTORY if Analysis.emotion_models_ready(EmotionModelDownload.MODEL_DIRECTORY)
-		else EmotionModelDownload.MODEL_ROOT)
+	return ManagedModels.directory("music2emo", preferences.emotion_models)
 
 func _has_emotion_models() -> bool:
 	return Analysis.emotion_models_ready(_emotion_model_path())
-
-func _auto_emotion_enabled() -> bool:
-	return preferences.analyze_emotion_automatically and _has_emotion_models()
 
 func _emotion_options(options: Dictionary) -> void:
 	if "emotions" not in options.get("tasks", []):
@@ -2165,78 +2142,41 @@ func _emotion_options(options: Dictionary) -> void:
 		metadata.append(str(FileAccess.get_modified_time(path.path_join(file))))
 	options["emotion_model_id"] = "|".join(metadata).sha256_text()
 
-func _toggle_emotion_download() -> void:
-	if _emotion_download.busy:
-		_emotion_download.cancel()
-	else:
-		_emotion_feedback = ""
-		_refresh_analysis()
-		diagnostics.record("emotion_model.download")
-		_emotion_download.start()
+func _show_model_help(model: String) -> void:
+	_help_model = model
+	if not is_instance_valid(_model_help):
+		_model_help = ConfirmationDialog.new()
+		_model_help.ok_button_text = "刷新"
+		_model_help.cancel_button_text = "关闭"
+		_model_help.add_button("打开 Hub", true, "hub")
+		_model_help.custom_action.connect(func(action: StringName):
+			if action == &"hub" and not ManagedModels.open_hub():
+				_model_help.dialog_text = "未找到更好的制谱器 Hub。安装或从开始菜单打开 Hub，进入「下载 → 模型管理」补齐 %s，再点击刷新。" % ManagedModels.NAMES[_help_model])
+		_model_help.confirmed.connect(_refresh_managed_models)
+		host.add_child(_model_help)
+	_model_help.title = "%s 模型" % ManagedModels.NAMES[model]
+	_model_help.dialog_text = "请在 Hub 的「下载 → 模型管理」下载或补齐 %s，完成后返回此处刷新。" % ManagedModels.NAMES[model]
+	_model_help.theme = _ui_theme
+	DialogLayout.present(_model_help, Vector2i(480, 190))
 
-func _show_emotion_download_progress(message: String, downloaded: int, total: int, can_cancel: bool) -> void:
-	if not is_instance_valid(_emotion_download_dialog):
-		var controls := _create_progress_window("正在下载 Music2Emo 模型")
-		_emotion_download_dialog = controls[0]
-		_emotion_download_stage = controls[2]
-		_emotion_download_meter = controls[3]
-		_emotion_download_cancel = _button("取消下载", _emotion_download.cancel)
-		_emotion_download_cancel.size_flags_horizontal = Control.SIZE_SHRINK_END
-		controls[1].add_child(_emotion_download_cancel)
-		_emotion_download_dialog.close_requested.connect(_emotion_download.cancel)
-		_emotion_download_dialog.window_input.connect(func(event: InputEvent):
-			if event.is_action_pressed("ui_cancel") and not _emotion_download_cancel.disabled:
-				_emotion_download.cancel())
-	_emotion.set_downloading(true)
-	_emotion_download_stage.text = ("%s（%.1f / %.1f MiB）" % [message, downloaded / 1048576.0, total / 1048576.0]
-		if total > 0 else message)
-	_emotion_download_cancel.disabled = not can_cancel
-	_set_progress_meter(_emotion_download_meter, downloaded, total)
-	if not _emotion_download_dialog.visible:
-		_emotion_download_dialog.theme = _ui_theme
-		DialogLayout.present(_emotion_download_dialog, Vector2i(480, 150))
-
-func _finish_emotion_download(path: String, message: String) -> void:
-	if is_instance_valid(_emotion_download_dialog):
-		_emotion_download_dialog.hide()
-	_emotion.set_downloading(false)
-	_emotion_feedback = message
-	if not path.is_empty():
-		preferences.emotion_models = path
-		preferences.save()
-	diagnostics.record("emotion_model.download_result", {"installed": not path.is_empty(), "result": message})
+func _refresh_managed_models() -> void:
+	ManagedModels.refresh()
+	_emotion_feedback = ""
 	_refresh_analysis()
-
-func _show_madmom_download(model: String, source: String, index: int, total: int, downloaded: int, size: int) -> void:
-	if not _analyzing:
-		return
-	var parent: Node = host
-	if is_instance_valid(_analysis_dialog) and _analysis_dialog.visible:
-		parent = _analysis_dialog
-	if not is_instance_valid(_madmom_download_dialog):
-		var controls := _create_progress_window("正在下载 madmom 模型")
-		_madmom_download_dialog = controls[0]
-		_madmom_download_label = controls[2]
-		_madmom_download_file = controls[3]
-		_madmom_download_total = ProgressBar.new()
-		_madmom_download_total.custom_minimum_size.y = 18
-		controls[1].add_child(_label("全部文件进度", 14))
-		controls[1].add_child(_madmom_download_total)
-	if not _madmom_download_dialog.visible and _madmom_download_dialog.get_parent() != parent:
-		_madmom_download_dialog.reparent(parent)
-	_madmom_download_dialog.theme = _ui_theme
-	var channel := "gh-proxy.org" if source == "proxy" else "GitHub 直连"
-	_madmom_download_label.text = "%s · 第 %d / %d 个文件\n%s（%.0f / %.0f KiB）" % [
-		channel, index, total, model, downloaded / 1024.0, size / 1024.0]
-	_set_progress_meter(_madmom_download_file, downloaded, size)
-	var fraction := float(downloaded) / maxi(size, 1)
-	_set_progress_meter(_madmom_download_total, (index - 1) * 1000 + roundi(1000 * fraction), total * 1000)
-	if not _madmom_download_dialog.visible:
-		DialogLayout.present(_madmom_download_dialog, Vector2i(500, 165))
-
-func _hide_madmom_download() -> void:
-	if is_instance_valid(_madmom_download_dialog):
-		_madmom_download_dialog.hide()
+	models_refreshed.emit()
+	var ready := false
+	match _help_model:
+		"madmom":
+			var options := _requested_audio_analysis()
+			var path := ManagedModels.directory("madmom", options.get("madmom_model_cache", ""))
+			ready = ManagedModels.madmom_ready(path, options.tasks, options.model)
+		"music2emo":
+			ready = _has_emotion_models()
+		"htdemucs":
+			ready = not ManagedModels.htdemucs_path().is_empty()
+	if not ready:
+		_show_model_help.call_deferred(_help_model)
+		_model_help.set_deferred("dialog_text", "尚未检测到完整的 %s 模型。请在 Hub 中校验模型文件再刷新。" % ManagedModels.NAMES[_help_model])
 
 func _open_emotion_models() -> void:
 	var dialog := _create_path_dialog("选择 Music2Emo ONNX 模型目录", FileDialog.FILE_MODE_OPEN_DIR)
@@ -2248,7 +2188,7 @@ func _open_emotion_models() -> void:
 			_emotion_feedback = ""
 			_refresh_analysis()
 		else:
-			_emotion_feedback = "此目录需要包含 mert.onnx、btc.onnx、emotion.onnx 和 metadata.txt。"
+			_emotion_feedback = "未找到完整的 Music2Emo 文件。请在 Hub 中校验，或选择包含完整模型的目录。"
 			_refresh_analysis()
 		dialog.queue_free())
 	dialog.canceled.connect(dialog.queue_free)
@@ -2258,7 +2198,7 @@ func _open_emotion_models() -> void:
 func _request_emotion() -> void:
 	_results_tabs.current_tab = 3
 	if not _has_emotion_models():
-		_open_emotion_models()
+		_show_model_help("music2emo")
 		return
 	var options := {"engine": "music2emo", "tasks": ["emotions"]}
 	_emotion_options(options)
@@ -2266,16 +2206,12 @@ func _request_emotion() -> void:
 	var cached := _audio_cache.lookup(id, options)
 	if cached.has("emotions"):
 		_analysis_audio_id = id
-		_apply_rhythm_result(options, cached, false)
+		_apply_emotion_result(cached)
 	else:
 		_start_analysis(options)
 
-func _open_analysis_settings(expand := false) -> void:
-	_open_inspector_page("自动抓音")
-	if expand:
-		_import_tip_context = ""
-		_analysis_panel.expand_settings()
-		_refresh_tip()
+func _open_analysis_settings() -> void:
+	_open_inspector_page("自动采音")
 
 func _request_spectrum() -> void:
 	_results_tabs.current_tab = 2
@@ -2388,11 +2324,11 @@ static func _analysis_targets(tasks: Array) -> String:
 	var captions := {"beats": "拍点", "downbeats": "小节重拍", "tempo": "速度曲线", "onsets": "起音", "accents": "力度重音", "melody": "主旋律", "emotions": "分段情绪"}
 	return "、".join(tasks.map(func(task: String): return captions.get(task, task)))
 
-func _start_analysis(options: Dictionary, from_import := false) -> bool:
+func _start_analysis(options: Dictionary) -> bool:
 	_emotion_options(options)
 	var details := {"engine": options.get("engine", "native"), "tempo_engine": options.get("tempo_engine", "native"),
 		"tasks": options.get("tasks", []), "spectrum": options.get("spectrum_only", false),
-		"accent_filter": options.has("accent_input"), "from_import": from_import}
+		"capture_id": options.get("capture_id", "")}
 	if _analyzing:
 		diagnostics.record("analysis.start", {"reason": "已有分析任务运行"}, "warning")
 		_notify("正在分析音频，请等待当前任务完成后重试。")
@@ -2410,10 +2346,8 @@ func _start_analysis(options: Dictionary, from_import := false) -> bool:
 	if "emotions" in options.get("tasks", []):
 		_emotion_feedback = "正在使用 Music2Emo 分析分段情绪…"
 	diagnostics.record("analysis.start", details)
-	_analysis_from_import = from_import
 	_analysis_request = options.duplicate(true)
 	_clear_analysis_feedback()
-	_import_tip_context = ""
 	_analysis_generation = _document_generation
 	if not options.get("agent_cross_analysis", false) or options.get("visible_progress", false):
 		_open_analysis_progress(options)
@@ -2422,12 +2356,9 @@ func _start_analysis(options: Dictionary, from_import := false) -> bool:
 	return true
 
 func _on_analysis_complete(path: String, result: Dictionary) -> void:
-	var from_import := _analysis_from_import
 	var request := _analysis_request
 	_analysis_request = {}
-	_analysis_from_import = false
 	_analyzing = false
-	_hide_madmom_download()
 	if is_instance_valid(_analysis_dialog):
 		_analysis_dialog.hide()
 	_refresh_audio()
@@ -2435,8 +2366,11 @@ func _on_analysis_complete(path: String, result: Dictionary) -> void:
 	if _analysis_generation != _document_generation or path != chart.resolve_audio_path(chart.audio_path):
 		diagnostics.record("analysis.discard", {"reason": "音频或工程已切换"}, "warning")
 		return
-	if not _analysis_audio_id.is_empty() and _analysis_audio_id == _audio_cache.fingerprint(path):
+	if not _analysis_audio_id.is_empty() and _analysis_audio_id == _audio_cache.fingerprint(path, request.has("capture_id")):
 		_audio_cache.store(_analysis_audio_id, request, result)
+	elif request.has("capture_id"):
+		_notify("采音期间音频文件已更换，请对当前音频重新采音。")
+		return
 	var counts := {}
 	for key: String in Analysis.RESULT_KEYS.values():
 		if result.get(key) is Array or result.get(key) is PackedFloat32Array:
@@ -2449,16 +2383,14 @@ func _on_analysis_complete(path: String, result: Dictionary) -> void:
 		_emotion_feedback = ""
 		_refresh_analysis()
 		return
-	if request.has("accent_input"):
-		if result.has("error"):
-			_notify("无法根据已有标记筛选力度重音。\n" + str(result.error))
-		else:
-			_apply_accent_filter(result.accent_filter, int(request.accent_sensitivity))
+	if request.has("capture_id"):
+		_apply_capture(request, result, _analysis_audio_id)
 		return
 	if result.get("spectrum_request", false):
 		_apply_spectrum_result(path, result)
 		return
-	_apply_rhythm_result(request, result, from_import)
+	if "emotions" in request.get("tasks", []):
+		_apply_emotion_result(result)
 
 func _open_analysis_progress(options: Dictionary) -> void:
 	if not is_instance_valid(_analysis_dialog):
@@ -2511,24 +2443,6 @@ static func _set_progress_meter(meter: ProgressBar, completed: int, total: int) 
 	meter.max_value = maxi(total, 1)
 	meter.value = completed
 
-func _refilter_accents(sensitivity: int) -> void:
-	if _analyzing or chart.audio_path.is_empty():
-		return
-	var data: Dictionary = chart.rhythm_analysis
-	var filter: Dictionary = data.get("accent_filter", {})
-	if not filter.is_empty():
-		_apply_accent_filter(filter, sensitivity)
-		return
-	var source := "onsets" if not data.get("onsets", []).is_empty() else "beats"
-	var markers: Array = data.get(source, [])
-	if not markers.is_empty():
-		_start_analysis({"accent_input": {"source": source, "markers": markers}, "accent_sensitivity": sensitivity})
-
-func _apply_accent_filter(filter: Dictionary, sensitivity: int) -> void:
-	_clear_analysis_feedback()
-	chart.set_filtered_accents(Analysis.filter_accents(filter.points, sensitivity), sensitivity, filter)
-	sidebar.set_guide_beat_visibility(true)
-
 func _clear_analysis_feedback() -> void:
 	_analysis_title = ""
 	_analysis_details = ""
@@ -2562,101 +2476,19 @@ func _apply_spectrum_result(path: String, result: Dictionary) -> void:
 		reason += " 现有图像来自上次分析。"
 	_show_analysis_feedback("频谱生成失败", reason)
 
-func _apply_rhythm_result(request: Dictionary, result: Dictionary, from_import: bool) -> void:
-	var tasks: Array = request.get("tasks", [])
-	var task_errors: Dictionary = result.get("task_errors", {})
-	var merged := _chart_music_at(_analysis_audio_id)
-	_chart_analysis_id = _analysis_audio_id
-	merged["mapping"] = chart.analysis_mapping
-	if result.has("tempo_curve"):
-		merged.erase("tempo_anchor_ms")
-	for key: String in Analysis.RESULT_KEYS.values() + ["tempo_anchor_ms", "duration_ms", "engine", "tempo_engine", "accent_filter", "accent_sensitivity"]:
-		if result.has(key) and (key != "duration_ms" or float(result[key]) > 0):
-			merged[key] = result[key]
-	chart.set_rhythm_analysis(merged)
-	var completed := {}
-	var counts := PackedStringArray()
-	var issues := PackedStringArray()
-	var markers := PackedStringArray()
-	var melody := false
-	for task: String in tasks:
-		var backend: String = request.get("tempo_engine" if task == "tempo" else "engine", "native")
-		var engine_name: String = "内置速度算法" if task == "tempo" and backend == "native" else AnalysisPanel.ENGINE_NAMES.get(backend, backend)
-		var label: String = AnalysisPanel.TASK_NAMES.get(task, task)
-		if task == "emotions":
-			engine_name = "Music2Emo"
-			label = "分段情绪"
-		var key: String = Analysis.RESULT_KEYS.get(task, "")
-		var values: Array = chart.rhythm_analysis.get(key, [])
-		var count := values.size() if result.has(key) else 0
-		var candidate_name := "拍点" if backend == "native" else "起音"
-		var candidates := int(result.get("accent_filter", {}).get("candidate_count", -1))
-		if task == "melody" and count > 0:
-			count = values.filter(func(point: Dictionary): return float(point.hz) > 0).size()
-		if count == 0:
-			var reason: String = task_errors.get(task, result.get("error", "没有检测到有效结果。"))
-			if task == "accents" and candidates >= 0:
-				reason = "检测到 %d 个%s，未找到符合力度条件的重音。" % [candidates, candidate_name]
-			if not result.has(key) and not values.is_empty():
-				reason += " 保留了此前的结果。"
-			issues.append("%s · %s · %s" % [engine_name, label, reason])
-			continue
-		if not completed.has(engine_name):
-			completed[engine_name] = PackedStringArray()
-		completed[engine_name].append(label)
-		var count_text := "%s %d %s" % [label, count, "个采样点" if task in ["melody", "tempo"] else "个标记"]
-		if task == "accents" and candidates >= 0:
-			count_text += "（从 %d 个%s中筛选）" % [candidates, candidate_name]
-		counts.append(count_text)
-		if task in Analysis.MARKER_KEYS:
-			markers.append(task)
-		_latest_tempo = _latest_tempo or task == "tempo"
-		melody = melody or task == "melody"
-	if from_import and "tempo" in tasks and not _latest_tempo and grid.reference_mode == ReferenceMode.AUTO_TEMPO:
-		var mode := _guide_before_import
-		if mode == ReferenceMode.AUTO_TEMPO and chart.rhythm_analysis.get("tempo_curve", []).is_empty():
-			mode = ReferenceMode.TRADITIONAL
-		sidebar.set_guide_mode(mode)
-		var mode_title: String = _mode_choice.get_item_text(mode)
-		issues.append("没有新的速度曲线，参考模式已恢复为「%s」。" % mode_title)
-	elif "tempo" in tasks and not _latest_tempo and grid.reference_mode == ReferenceMode.AUTO_TEMPO and chart.rhythm_analysis.get("tempo_curve", []).is_empty():
-		issues.append("当前没有可用的自动速度曲线，卷帘暂时无法按自动速度吸附。")
-	if not markers.is_empty():
-		if chart.analysis_mapping not in markers:
-			chart.set_analysis_mapping(markers[0])
-		sidebar.set_guide_beat_visibility(true)
-		counts.append("卷帘显示「%s」" % AnalysisPanel.TASK_NAMES[chart.analysis_mapping])
-	elif grid.show_rhythm_markers and not chart.rhythm_analysis.get(chart.analysis_mapping, []).is_empty():
-		counts.append("卷帘显示此前的「%s」" % AnalysisPanel.TASK_NAMES[chart.analysis_mapping])
-	if tasks == ["emotions"]:
-		_results_tabs.current_tab = 3
+func _apply_emotion_result(result: Dictionary) -> void:
+	var segments: Array = result.get("emotions", [])
+	_results_tabs.current_tab = 3
+	_emotion_feedback = str(result.get("task_errors", {}).get("emotions", result.get("error", "")))
+	if not segments.is_empty():
+		var merged := _chart_music_at(_analysis_audio_id)
+		_chart_analysis_id = _analysis_audio_id
+		merged["emotions"] = segments
+		merged["duration_ms"] = maxf(merged.get("duration_ms", 0), result.get("duration_ms", 0))
+		chart.set_rhythm_analysis(merged)
+		_show_analysis_feedback("分段情绪分析完成", "%d 个情绪片段" % segments.size())
 	else:
-		_results_tabs.current_tab = 2 if melody else 1
-	if "emotions" in tasks:
-		_emotion_feedback = str(task_errors.get("emotions", ""))
-	if melody:
-		_frequency_tabs.current_tab = 1
-	var confirmations := PackedStringArray()
-	for engine_name: String in completed:
-		confirmations.append("使用%s分析%s成功！" % [engine_name, "、".join(completed[engine_name])])
-	var title := " ".join(confirmations)
-	var details := PackedStringArray()
-	if not counts.is_empty():
-		details.append(" · ".join(counts))
-	if not issues.is_empty():
-		if not title.is_empty():
-			details.insert(0, title)
-		title = "分析失败" if completed.is_empty() else "部分分析成功"
-		details.append_array(issues)
-	if completed.is_empty() and issues.is_empty():
-		title = "分析失败"
-		details.append(str(result.get("error", "没有可显示的分析结果。")))
-	if not completed.is_empty():
-		_fit_timeline()
-	_show_analysis_feedback(title, "\n".join(details))
-	if from_import and not completed.is_empty():
-		_import_tip_context = _context_tip()
-		_refresh_tip()
+		_show_analysis_feedback("分段情绪分析失败", _emotion_feedback if not _emotion_feedback.is_empty() else "没有检测到有效片段。")
 
 func _apply_curve() -> void:
 	if not chart.apply_rhythm_curve():
@@ -2684,7 +2516,7 @@ func _clear_chart() -> void:
 	_set_loop_range(Vector2(-1, -1))
 	grid.background_clip_key = []
 	chart.reset_loaded_chart()
-	sidebar.set_guide_mode(ReferenceMode.TRADITIONAL)
+	sidebar.set_guide_mode(ReferenceMode.BEATS)
 	chart.close_root_dir()
 	sidebar.imported_file_path = ""
 	if sidebar._audio_player:

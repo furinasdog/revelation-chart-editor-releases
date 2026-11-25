@@ -30,6 +30,7 @@ namespace RevelationHub
         private CancellationTokenSource download;
         private string activeVersion;
         private bool onlyInstalled, closing;
+        internal bool ShowModelsOnLaunch { get; init; }
         private Brush ThemeBrush(string key) => (Brush)FindResource(key);
 
         public MainWindow() : this(new HttpClient {Timeout=Timeout.InfiniteTimeSpan},HubServices.UserRoot,new EditorProfile(EditorProfile.DefaultRoot)) { }
@@ -50,7 +51,12 @@ namespace RevelationHub
                 serviceTimer.Start();
                 WatchEditor(); editorTimer.Start();
                 _ = CheckServices(false);
-                try { available = library.Offline(); Navigate(library.LocalVersions().Any()?"已安装":"版本库"); await Refresh(); }
+                try
+                {
+                    available = library.Offline();
+                    Navigate(ShowModelsOnLaunch ? "模型管理" : library.LocalVersions().Any() ? "已安装" : "版本库");
+                    if (!ShowModelsOnLaunch) await Refresh();
+                }
                 catch (Exception ex) { Message(ex.Message, true); }
             };
             editorTimer.Tick += (_, __) => WatchEditor();

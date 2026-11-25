@@ -2,9 +2,9 @@ extends Node
 
 signal completed(audio_path: String, result: Dictionary)
 signal progress(stage: String, completed_windows: int, total_windows: int)
-signal madmom_download_progress(model: String, source: String, index: int, total: int, downloaded: int, size: int)
-signal madmom_download_finished()
 
+const ManagedModels := preload("res://desktop/managed_models.gd")
+const NativeAudioTools := preload("res://desktop/native_audio_tools.gd")
 const MODEL := "res://models/beat-this-final0.onnx"
 const COEFFICIENTS := "res://models/beat-this-frontend.bin"
 const PCM_RATE := 22050
@@ -26,13 +26,10 @@ const RESULT_KEYS := {
 
 var _worker: Thread
 var _engine: RefCounted
+var _beat_model_loaded := false
 var _progress_file := ""
 var _progress_refresh := 0.0
 var _last_progress := ""
-var _madmom_download_file := ""
-var _madmom_progress_line := ""
-var _madmom_refresh := 0.0
-
 func start(audio_path: String, preferred_ffmpeg: String = "", options: Dictionary = {}) -> bool:
 	if _worker:
 		return false
@@ -49,10 +46,6 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	if _worker.is_alive():
-		_madmom_refresh += delta
-		if not _madmom_download_file.is_empty() and _madmom_refresh >= 0.10:
-			_madmom_refresh = 0.0
-			_read_madmom_download()
 		_progress_refresh += delta
 		if not _progress_file.is_empty() and _progress_refresh >= 0.16:
 			_progress_refresh = 0
@@ -65,8 +58,6 @@ func _process(delta: float) -> void:
 		return
 	var finished: Array = _worker.wait_to_finish()
 	_worker = null
-	if not _madmom_download_file.is_empty():
-		_finish_madmom_track(_madmom_download_file)
 	_progress_file = ""
 	set_process(false)
 	completed.emit(finished[0], finished[1])
@@ -104,11 +95,13 @@ func analyze_file(audio_path: String, preferred_ffmpeg: String = "", options: Di
 
 func _analyze_vocal_pitch(audio_path: String, preferred_ffmpeg: String) -> Dictionary:
 	var executable := _engine_executable("rmvpe")
+	if executable.is_empty():
+		return {"error": "找不到 RMVPE 原生程序 revelation-rmvpe.exe。"}
 	var model := OS.get_environment("REVELATION_RMVPE_MODEL")
 	if model.is_empty():
-		model = OS.get_executable_path().get_base_dir().path_join("models/rmvpe.onnx")
-	if executable.is_empty() or not FileAccess.file_exists(model):
-		return {"error": "安装目录缺少 RMVPE 原生程序或模型。"}
+		model = executable.get_base_dir().path_join("models/rmvpe.onnx")
+	if not FileAccess.file_exists(model):
+		return {"error": "找不到 RMVPE 音高模型：%s" % model}
 	var base := "user://rmvpe-%d-%d" % [OS.get_process_id(), Time.get_ticks_usec()]
 	var pcm := ProjectSettings.globalize_path(base + ".f32")
 	var output := ProjectSettings.globalize_path(base + ".json")
@@ -132,7 +125,7 @@ func _analyze_vocal_pitch(audio_path: String, preferred_ffmpeg: String) -> Dicti
 
 func _analyze_emotion(audio_path: String, preferred_ffmpeg: String, models: String, low_memory: bool) -> Dictionary:
 	if not emotion_models_ready(models):
-		return {"error": "尚未配置 Music2Emo 的 ONNX 模型。请在「情绪分析」里选择模型目录。"}
+		return {"error": "请到 Hub 的「下载 → 模型管理」补齐 Music2Emo 模型，然后回到编辑器刷新。"}
 	var executable := _engine_executable("music2emo")
 	if executable.is_empty():
 		return {"error": "安装目录缺少 Music2Emo 原生程序。"}
@@ -174,46 +167,8 @@ func _track_emotion(path: String) -> void:
 		_progress_refresh = 0.0
 		_emit_progress("Music2Emo · 加载模型")
 
-func _track_madmom_download(path: String) -> void:
-	if not _worker:
-		return
-	_madmom_download_file = path
-	_madmom_progress_line = ""
-	_madmom_refresh = 0.0
-	_read_madmom_download()
-
-func _read_madmom_download() -> void:
-	if not FileAccess.file_exists(_madmom_download_file):
-		return
-	var line := FileAccess.get_file_as_string(_madmom_download_file)
-	if line == _madmom_progress_line or not line.ends_with("\n"):
-		return
-	var parts := line.strip_edges().split("\t")
-	if parts.size() != 6 or parts[0] not in ["direct", "proxy", "done"]:
-		return
-	for index in range(1, 5):
-		if not parts[index].is_valid_int():
-			return
-	_madmom_progress_line = line
-	if parts[0] == "done":
-		madmom_download_finished.emit()
-	else:
-		madmom_download_progress.emit(parts[5].get_file(), parts[0], int(parts[1]), int(parts[2]), int(parts[3]), int(parts[4]))
-
-func _finish_madmom_track(path: String) -> void:
-	if _madmom_download_file == path:
-		_madmom_download_file = ""
-		madmom_download_finished.emit()
-	if FileAccess.file_exists(path):
-		DirAccess.remove_absolute(path)
-
 static func emotion_models_ready(path: String) -> bool:
-	if path.is_empty():
-		return false
-	for file: String in ["mert.onnx", "btc.onnx", "emotion.onnx", "metadata.txt"]:
-		if not FileAccess.file_exists(path.path_join(file)):
-			return false
-	return true
+	return ManagedModels.emotion_ready(path)
 
 func _analyze_rhythm(audio_path: String, preferred_ffmpeg: String, options: Dictionary) -> Dictionary:
 	var ffmpeg := _ffmpeg(preferred_ffmpeg)
@@ -270,11 +225,12 @@ func _analyze_rhythm(audio_path: String, preferred_ffmpeg: String, options: Dict
 			if count < rate * 2 or count > rate * 900:
 				result = {"error": "请使用两秒至十五分钟的音频。"}
 			elif backend == "native":
-				result = _native(FileAccess.get_file_as_bytes(pcm_path).to_float32_array())
+				var tempo_only: bool = options.get("capture_id") == "tempo"
+				result = _native(FileAccess.get_file_as_bytes(pcm_path).to_float32_array(), "tempo" in plans[backend], not tempo_only)
 			else:
 				result = _external(backend, pcm_path, rate, plans[backend], model if backend == engine else "", options)
 			duration = maxf(duration, count * 1000.0 / rate)
-			if backend == engine and ("accents" in tasks or accent_source in tasks) and not result.has("error"):
+			if backend == engine and ("accents" in tasks or (not options.has("capture_id") and accent_source in tasks)) and not result.has("error"):
 				accent_filter = _measure_accent_filter(pcm_path, rate, accent_source, result.get(accent_source, []))
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(pcm_path))
 		results[backend] = result
@@ -288,6 +244,8 @@ func _analyze_rhythm(audio_path: String, preferred_ffmpeg: String, options: Dict
 		else:
 			combined[key] = captured.get(key, [])
 			combined["engine"] = engine
+	if "beats" in tasks and float(captured.get("bpm", 0)) > 0:
+		combined["beat_bpm"] = float(captured.bpm)
 	if not accent_filter.is_empty():
 		combined["accent_filter"] = accent_filter
 	if combined.has("accents"):
@@ -328,20 +286,21 @@ func _decode(audio_path: String, ffmpeg: String, pcm_path: String, rate: int) ->
 		return "FFmpeg 无法解码此文件（退出码 %d）。请检查音频是否完整且含有音轨。" % exit_code
 	return ""
 
-func _native(samples: PackedFloat32Array) -> Dictionary:
+func _native(samples: PackedFloat32Array, include_tempo := true, predict_beats := true) -> Dictionary:
 	if not ClassDB.class_exists("RevelationRhythm"):
 		return {"error": "未载入节奏分析组件。请检查安装目录中的运行库。"}
-	if not FileAccess.file_exists(MODEL) or not FileAccess.file_exists(COEFFICIENTS):
+	if (predict_beats and not FileAccess.file_exists(MODEL)) or not FileAccess.file_exists(COEFFICIENTS):
 		return {"error": "找不到随软件分发的节拍模型或频谱参数。"}
 	if not _engine:
-		var engine: RefCounted = ClassDB.instantiate("RevelationRhythm")
-		var error: String = engine.load_model(FileAccess.get_file_as_bytes(MODEL))
+		_engine = ClassDB.instantiate("RevelationRhythm")
+	if predict_beats and not _beat_model_loaded:
+		var error: String = _engine.load_model(FileAccess.get_file_as_bytes(MODEL))
 		if not error.is_empty():
 			push_warning(error)
 			return {"error": "无法加载节拍模型。请检查软件文件是否完整。"}
-		_engine = engine
+		_beat_model_loaded = true
 	var coefficients := FileAccess.get_file_as_bytes(COEFFICIENTS).to_float32_array()
-	var result: Dictionary = _engine.analyze(samples, coefficients)
+	var result: Dictionary = _engine.analyze(samples, coefficients, include_tempo, predict_beats)
 	if result.has("error"):
 		push_warning(str(result.error))
 		return {"error": "节奏分析失败。请重试或更换音频。"}
@@ -360,49 +319,29 @@ func _external(engine: String, pcm: String, rate: int, tasks: Array, model: Stri
 		model = "default"
 	var arguments := PackedStringArray([ProjectSettings.globalize_path(pcm),
 		ProjectSettings.globalize_path(response), str(rate), ",".join(tasks), model])
-	var download_path := ""
 	if is_madmom:
-		var cache: String = options.get("madmom_model_cache", "")
-		if cache.is_empty():
-			cache = OS.get_environment("AUTOREVELATION_MADMOM_MODELS")
-		if cache.is_empty():
-			cache = "user://madmom-models"
+		var cache := ManagedModels.directory("madmom", options.get("madmom_model_cache", ""))
 		if FileAccess.file_exists(cache):
-			return {"error": "madmom 的模型缓存路径指向文件。请在分析设置中选择文件夹。"}
-		arguments.append(ProjectSettings.globalize_path(cache))
-		download_path = ProjectSettings.globalize_path(response + ".download")
-		arguments.append(download_path)
-		_track_madmom_download.call_deferred(download_path)
+			return {"error": "madmom 的模型缓存路径指向文件。请在偏好设置中选择文件夹。"}
+		if not ManagedModels.madmom_ready(cache, tasks, model):
+			return {"error": "请到 Hub 的「下载 → 模型管理」补齐 madmom 模型，然后回到编辑器刷新。"}
+		arguments.append(cache)
 	var output: Array = []
 	var status := OS.execute(executable, arguments, output, true)
-	if not download_path.is_empty():
-		_finish_madmom_track.call_deferred(download_path)
 	var result: Variant = JSON.parse_string(FileAccess.get_file_as_string(response)) if status == 0 and FileAccess.file_exists(response) else null
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(response))
 	if status != 0 or not result is Dictionary:
 		var details := "\n".join(output).strip_edges()
 		push_warning(name + " " + details)
-		var lower := details.to_lower()
 		if status < 0:
 			return {"error": "无法启动 %s 原生分析程序。请检查运行库与文件权限。" % name}
-		if is_madmom and "sha-256" in lower:
-			return {"error": "下载的 madmom 模型未通过 SHA-256 校验。请重新推理以重试下载。"}
-		if is_madmom and "cache" in lower:
-			return {"error": "madmom 无法写入模型缓存。请检查缓存路径和写入权限。"}
-		if is_madmom and ("http" in lower or "model host" in lower or "model download" in lower):
-			return {"error": "madmom 直连 GitHub 和通过 gh-proxy.org 下载均失败。请检查网络，或使用已有的模型缓存。"}
 		if status == 0:
 			return {"error": "%s 没有返回可读取的分析结果。" % name}
 		return {"error": "%s 原生分析程序退出（退出码 %d）。详细错误见运行日志。" % [name, status]}
 	return result
 
 func _engine_executable(engine: String) -> String:
-	var file := "revelation-%s.exe" % engine
-	var source := ProjectSettings.globalize_path("res://bin/" + file)
-	if FileAccess.file_exists(source):
-		return source
-	var installed := OS.get_executable_path().get_base_dir().path_join(file)
-	return installed if FileAccess.file_exists(installed) else ""
+	return NativeAudioTools.executable(engine)
 
 func _external_tempo(result: Dictionary, duration: float) -> Array:
 	var beats: Array = result.get("beats", [])
@@ -537,18 +476,4 @@ func _spectrum(audio: String, ffmpeg: String, path: String, span := Vector2i(-1,
 	return {"spectrum": bytes, "spectrum_request": true}
 
 func _ffmpeg(preferred: String) -> String:
-	if not preferred.is_empty():
-		return preferred
-	var custom := OS.get_environment("AUTOREVELATION_FFMPEG")
-	if not custom.is_empty():
-		return custom
-	if OS.get_name() == "Windows":
-		var bundled := OS.get_executable_path().get_base_dir().path_join("tools/ffmpeg.exe")
-		if FileAccess.file_exists(bundled):
-			return bundled
-		var source_root := ProjectSettings.globalize_path("res://").trim_suffix("/").get_base_dir()
-		for directory: String in [source_root, source_root.get_base_dir()]:
-			var installed := directory.path_join(".conda/Library/bin/ffmpeg.exe")
-			if FileAccess.file_exists(installed):
-				return installed
-	return "ffmpeg"
+	return NativeAudioTools.ffmpeg(preferred)

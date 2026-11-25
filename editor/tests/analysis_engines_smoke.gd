@@ -13,6 +13,18 @@ func check(condition: bool, description: String) -> void:
 		push_error(description)
 		failures += 1
 
+func check_capture_preferences(desktop: Node) -> void:
+	var prefs: Node = desktop.preferences
+	var saved: Dictionary = prefs.analysis_options
+	for options: Dictionary in [{"accent_sensitivity": 0}, {"sensitivity": 0, "accent_sensitivity": 35}]:
+		prefs.analysis_options = options.duplicate()
+		var panel := preload("res://desktop/analysis_panel.gd").new()
+		panel.setup(prefs, desktop.chart, Control.new())
+		check(panel.options().sensitivity == options.get("sensitivity", 100),
+			"Legacy accent filtering does not hide detections; an explicit capture sensitivity of zero is preserved")
+		panel.free()
+	prefs.analysis_options = saved
+
 func check_accent_density(analyzer: Node) -> void:
 	# Two sections with identical dynamics and different recording levels. The
 	# strong attacks in both sections should survive alongside no weak attacks.
@@ -40,7 +52,7 @@ func check_accent_density(analyzer: Node) -> void:
 
 func run() -> void:
 	var args := OS.get_cmdline_user_args()
-	if args.size() != 4 or change_scene_to_file("res://main.tscn") != OK:
+	if args.size() != 4 or change_scene_to_file("res://main/main.tscn") != OK:
 		quit(2)
 		return
 	await scene_changed
@@ -96,109 +108,93 @@ func run() -> void:
 	chart.set_rhythm_analysis(independent)
 	desktop.sidebar.set_guide_mode(ReferenceMode.BEATS)
 	chart.set_analysis_mapping("onsets")
-	check(desktop.grid._beat_positions.size() == independent.get("onsets", []).size(), "Selected onsets are mapped to the timeline")
+	check(desktop.grid.capture_lines.positions.size() == independent.get("onsets", []).size(), "Selected onsets are mapped to the timeline")
 	chart.set_analysis_mapping("downbeats")
-	check(desktop.grid._beat_positions.is_empty(), "Missing mapped markers do not fall back to another task")
+	check(desktop.grid.capture_lines.positions.is_empty(), "Missing mapped markers do not fall back to another task")
 	chart.restore_rhythm_fields({"rhythmAnalysis": chart.rhythm_analysis})
 	check(chart.analysis_mapping == "downbeats", "Chart persistence restores marker mapping")
 
-	desktop.import_audio(audio)
-	desktop._ask.hide()
+	# Unsupported tasks and model-cache errors still leave independent tasks available to the Agent.
+	var partial: Dictionary = analyzer.analyze_file(audio, "", {"engine": "essentia", "tempo_engine": "native", "tasks": ["downbeats", "tempo"]})
+	check(partial.task_errors.has("downbeats") and not partial.get("tempo_curve", []).is_empty(), "Mixed engine requests report partial success")
+	var bad_model: Dictionary = analyzer.analyze_file(audio, "", {"engine": "madmom", "tempo_engine": "native", "tasks": ["onsets", "tempo"], "madmom_model_cache": audio})
+	check(str(bad_model.task_errors.get("onsets", "")).contains("模型缓存路径指向文件") and not bad_model.get("tempo_curve", []).is_empty(), "An invalid model directory leaves independent tempo detection usable")
+
+	desktop.import_audio(audio, false)
 	desktop._open_analysis_settings()
 	var panel: Control = desktop._analysis_panel
-	check(desktop._tabs.current_tab == panel.get_index(), "Analysis menu opens the inspector page")
-	chart.set_rhythm_analysis({"onsets": [250.0], "duration_ms": 24000, "mapping": "onsets"})
+	check_capture_preferences(desktop)
+	check(desktop._tabs.current_tab == panel.get_index() and panel.selected_id == "beat", "The capture panel starts on Beat This!")
+	check(not chart.has_project_bpm and panel._run.text == "采音", "A new audio chart has no confirmed BPM or cached beat capture")
 	panel._run.pressed.emit()
-	check(desktop._analyzing, "The inspector button starts the background analyzer")
+	check(desktop._analyzing and desktop._analysis_request.tasks == ["beats"], "Only the selected task is requested")
 	if desktop._analyzing:
 		await analyzer.completed
-	check(chart.rhythm_analysis.get("onsets", []) == [250.0] and not chart.rhythm_analysis.get("tempo_curve", []).is_empty(),
-		"Rerunning selected tasks preserves other results")
-	check(desktop._status.text.contains("成功") and desktop._status.text.contains("Beat This!"),
-		"Inspector rerun displays which engine successfully produced the results")
-	check(desktop._message.visible and desktop._message.title == "分析结果" and desktop._message.dialog_text.contains("使用Beat This!"),
-		"A completed analysis opens a dialog naming the actual engine")
-	desktop._message.hide()
-	check(chart.analysis_mapping == "beats" and desktop.grid.show_rhythm_markers,
-		"Freshly analyzed markers are shown instead of the previously mapped data")
-	check(desktop._result.visible and desktop._status.text.contains("内置速度算法"),
-		"Results open automatically and identify the independent speed source")
-	var ess_request := {"engine": "essentia", "tempo_engine": "native", "model": "multifeature", "tasks": ["onsets"]}
-	check(desktop._start_analysis(ess_request), "An onset-only analysis starts")
+	check(chart.rhythm_analysis.capture_id == "beat" and chart.rhythm_analysis.get("tempo_curve", []).is_empty(),
+		"Beat capture applies beats without a separate tempo or emotion task")
+	check(chart.has_project_bpm and absf(chart.bpm - 120) < 3, "Raw beat spacing fills the initial project BPM")
+	check(panel._run.text == "应用" and desktop.grid.reference_mode == ReferenceMode.BEATS, "The finished result is displayed and reusable")
+	check("本次采音" in panel._summary.text and "首个" in panel._summary.text,
+		"The capture panel shows the result source, counts and the first marker after inference")
+	var applied: Dictionary = chart.rhythm_analysis.duplicate(true)
+	panel.select("beat-madmom")
+	check(panel._run.text == "采音" and chart.rhythm_analysis == applied, "Beat models have independent cache status and switching preserves the timeline")
+	desktop.preferences.analysis_options["madmom_model_cache"] = models
+	panel.select("onset-cnn")
+	panel._run.pressed.emit()
 	if desktop._analyzing:
 		await analyzer.completed
-	check(desktop._status.text.contains("使用Essentia分析起音成功") and chart.analysis_mapping == "onsets"
-		and desktop._plot_title.text.contains("此前"), "Onset-only analysis displays onsets and labels the old tempo plot")
-	desktop._message.hide()
-	var onsets: Array = chart.rhythm_analysis.get("onsets", []).duplicate()
+	check(chart.rhythm_analysis.capture_id == "onset-cnn" and panel._run.text == "应用", "A single madmom onset capture is cached")
+	applied = chart.rhythm_analysis.duplicate(true)
+	panel.select("onset-rnn")
+	check(panel._run.text == "采音" and chart.rhythm_analysis == applied, "The recurrent model cannot use the convolutional onset cache")
+	panel.select("onset-cnn")
+	panel._sensitivity.value = 100
+	check(chart.rhythm_analysis == applied, "Editing sensitivity leaves the applied result intact")
 	var decoder: String = desktop.preferences.ffmpeg_path
 	desktop.preferences.ffmpeg_path = "user://missing-ffmpeg.exe"
-	panel._accent_slider.value = 20
-	var strict_count: int = chart.rhythm_analysis.get("accents", []).size()
-	panel._accent_slider.value = 100
-	check(not desktop._analyzing and not desktop._message.visible and chart.analysis_mapping == "accents"
-		and chart.rhythm_analysis.get("accents", []).size() >= strict_count and chart.rhythm_analysis.onsets == onsets,
-		"The slider refilters and maps accents immediately without a decoder or inference")
-	var saved_analysis: Dictionary = JSON.parse_string(JSON.stringify(chart.rhythm_analysis))
-	chart.restore_rhythm_fields({"rhythmAnalysis": saved_analysis})
-	check(panel._accent_slider.value == 100 and not chart.rhythm_analysis.get("accent_filter", {}).is_empty(),
-		"The analysis cache and slider value survive a chart round trip")
-	desktop.preferences.ffmpeg_path = decoder
-	saved_analysis.erase("accent_filter")
-	chart.set_rhythm_analysis(saved_analysis)
-	panel._accent_slider.value = 50
-	check(desktop._analyzing and desktop._analysis_request.has("accent_input"), "A legacy chart measures strengths using its saved onsets")
-	if desktop._analyzing:
-		await analyzer.completed
-	check(not desktop._message.visible and not chart.rhythm_analysis.get("accent_filter", {}).is_empty()
-		and chart.rhythm_analysis.onsets == onsets, "Legacy refilter leaves inference results intact")
-	chart.set_analysis_mapping("onsets")
-	var partial_request := {"engine": "essentia", "tempo_engine": "native", "tasks": ["downbeats", "tempo"]}
-	check(desktop._start_analysis(partial_request), "A request with independent results starts")
-	if desktop._analyzing:
-		await analyzer.completed
-	check(desktop._status.text.contains("部分分析成功") and desktop._status.text.contains("不支持")
-		and desktop._status.text.contains("保留了此前"), "A partial run reports the task error and retained history")
-	desktop._message.hide()
-	var blocked_model := {"engine": "madmom", "tempo_engine": "native", "tasks": ["onsets", "tempo"],
-		"madmom_model_cache": audio}
-	check(desktop._start_analysis(blocked_model), "The mixed request with an invalid model-cache path starts")
-	if desktop._analyzing:
-		await analyzer.completed
-	check(desktop._status.text.contains("部分分析成功") and desktop._status.text.contains("模型缓存路径指向文件")
-		and desktop._status.text.contains("内置速度算法分析速度曲线成功") and desktop._status.text.contains("卷帘显示此前的「起音」"),
-		"A failed model job gives its actual reason while the independent speed job completes")
-	desktop._message.hide()
-	var saved_decoder: String = desktop.preferences.ffmpeg_path
-	desktop.preferences.ffmpeg_path = "user://missing-ffmpeg.exe"
+	panel._run.pressed.emit()
+	check(not desktop._analyzing and chart.rhythm_analysis.capture_sensitivity == 100 and chart.rhythm_analysis.capture_markers == chart.rhythm_analysis.onsets, "Applying cached onsets at maximum sensitivity uses all raw detections without decoding")
+	check("已应用缓存" in panel._summary.text and "首个" in panel._summary.text, "Cached results are identified next to the capture button")
 	desktop.sidebar.set_guide_mode(ReferenceMode.TRADITIONAL)
-	desktop._request_analysis(true)
+	check("自动采音线" in panel._summary.text, "The result describes how to see it when traditional guides are selected")
+	desktop.sidebar.set_guide_mode(ReferenceMode.BEATS)
+	panel.select("beat")
+	chart.set_bpm(155)
+	panel._run.pressed.emit()
+	check(is_equal_approx(chart.bpm, 155.0), "Applying a beat result preserves the manually entered tempo")
+	var saved: Dictionary = chart.to_export_dict()
+	chart.restore_rhythm_fields(saved)
+	check(chart.has_project_bpm and chart.rhythm_analysis.capture_id == "beat" and chart.rhythm_analysis.capture_sensitivity == 100, "Chart persistence restores capture identity and sensitivity")
+	panel.select("onset")
+	panel._run.pressed.emit()
 	if desktop._analyzing:
 		await analyzer.completed
-	check(desktop._status.text.contains("分析失败") and desktop._status.text.contains("无法启动 FFmpeg")
-		and desktop._status.text.contains("参考模式已恢复") and desktop.grid.reference_mode == ReferenceMode.TRADITIONAL,
-		"An unavailable decoder is reported and the import restores the previous reference mode")
-	check(desktop._message.visible and desktop._message.dialog_text.contains("无法启动 FFmpeg"), "The failure dialog reports its cause")
+	check(desktop._message.visible and desktop._message.dialog_text.contains("FFmpeg") and chart.rhythm_analysis.capture_id == "beat", "A failed capture retains the previous result")
 	desktop._message.hide()
-	desktop.preferences.ffmpeg_path = saved_decoder
-	panel._spectrum.pressed.emit()
-	check(desktop._analyzing, "The inspector can also start a spectrogram job")
+	desktop.preferences.ffmpeg_path = decoder
+	panel.select("tempo")
+	panel._run.pressed.emit()
 	if desktop._analyzing:
 		await analyzer.completed
-	check(desktop._frequency.visible and desktop._spectrum_image.texture != null, "The spectrogram is shown in the frequency panel")
-	check(desktop._frequency_feedback.text.contains("分析频谱成功"), "The spectrogram reports completion in its own results view")
+	check(chart.rhythm_analysis.capture_id == "tempo" and absf(chart.bpm - 120) < 3 and chart.rhythm_analysis.capture_markers.is_empty(), "Explicit BPM capture sets project tempo and adds no event lines")
+	desktop.sidebar.set_guide_mode(ReferenceMode.TRADITIONAL)
+	panel._run.pressed.emit()
+	check(not desktop._analyzing and desktop.grid.reference_mode == ReferenceMode.TRADITIONAL,
+		"Applying cached BPM keeps the selected traditional reference lines")
+	desktop._request_spectrum()
+	if desktop._analyzing:
+		await analyzer.completed
+	check(desktop._spectrum_image.texture != null, "The spectrum entry point still produces an image")
 	desktop._message.hide()
-	panel._select(panel._preset, "melody")
-	panel._apply_preset(panel._preset.selected)
-	check(desktop.import_audio(manual), "Import a song with the melody-only preset selected")
-	check(desktop._ask.dialog_text.contains("主旋律") and not desktop._ask.dialog_text.contains("速度曲线"),
-		"Import confirmation describes only the selected analysis tasks")
+	panel.select("melody")
+	check(desktop.import_audio(manual), "Import audio with melody chosen")
+	check(desktop._ask.dialog_text.contains("主旋律") and panel._run.text == "采音", "Import offers the selected task for the new audio only")
 	desktop._ask.hide()
 	desktop._ask.confirmed.emit()
 	if desktop._analyzing:
 		await analyzer.completed
-	check(desktop._frequency.visible and desktop._frequency_tabs.current_tab == 1
-		and desktop._frequency_feedback.text.contains("使用Essentia分析主旋律成功")
-		and chart.rhythm_analysis.get("tempo_curve", []).is_empty(), "Import analyzes and displays only the selected melody task")
+	check(chart.rhythm_analysis.get("capture_id") == "melody" and not chart.rhythm_analysis.get("melody", []).is_empty()
+		and chart.rhythm_analysis.get("tempo_curve", []).is_empty(), "Import analyzes only the selected melody")
 	print("ANALYSIS_ENGINES_SMOKE failures=", failures)
 	quit(1 if failures else 0)
