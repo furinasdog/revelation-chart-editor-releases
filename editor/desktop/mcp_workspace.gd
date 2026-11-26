@@ -20,8 +20,6 @@ var _server := Server.new()
 var _tools := Catalog.tools()
 var _drafts := {}
 var _active_session := ""
-var _share_media := false
-var _share_paths := false
 var _token: String
 var _dialog: AcceptDialog
 var _approval: ConfirmationDialog
@@ -29,7 +27,6 @@ var _approved := false
 var _port: SpinBox
 var _path: LineEdit
 var _client: LineEdit
-var _allow_images: CheckBox
 var _allow_paths: CheckBox
 var _status: Label
 var _toggle: Button
@@ -54,7 +51,7 @@ func setup(workspace: Node) -> void:
 	var body := VBoxContainer.new()
 	body.add_theme_constant_override("separation", 8)
 	_dialog.add_child(body)
-	var intro: Label = _workspace._label("让本机 MCP 客户端读取工程、分析音频及编辑草稿。应用草稿前会在编辑器内询问。")
+	var intro: Label = _workspace._label("本机 MCP 客户端可读取工程曲绘、预览画面和音频图。应用草稿前会在编辑器内询问。")
 	intro.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	body.add_child(intro)
 	_port = SpinBox.new()
@@ -73,18 +70,11 @@ func setup(workspace: Node) -> void:
 	_client.text = str(config.get_value("mcp", "client", ""))
 	_client.tooltip_text = "匹配客户端在 MCP 初始化时上报的 clientInfo.name，区分大小写。"
 	_add_row(body, "绑定客户端名称", _client)
-	_allow_images = CheckBox.new()
-	_allow_images.text = "允许客户端读取曲绘、预览画面和音频图"
-	_allow_images.button_pressed = bool(config.get_value("mcp", "share_media", false))
-	body.add_child(_allow_images)
 	_allow_paths = CheckBox.new()
 	_allow_paths.text = "允许客户端获取音频的本机绝对路径"
 	_allow_paths.button_pressed = bool(config.get_value("mcp", "share_paths", false))
 	body.add_child(_allow_paths)
-	_share_media = _allow_images.button_pressed
-	_share_paths = _allow_paths.button_pressed
-	_allow_images.toggled.connect(_sharing_changed)
-	_allow_paths.toggled.connect(_sharing_changed)
+	_allow_paths.toggled.connect(_path_sharing_changed)
 	_status = _workspace._label("")
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	body.add_child(_status)
@@ -139,7 +129,7 @@ func _toggle_server() -> void:
 		_refresh()
 		_status.text = "无法保存 MCP 设置。请检查用户目录的写入权限。"
 		return
-	_workspace.diagnostics.record("mcp.start", {"port": int(_port.value), "share_media": _share_media})
+	_workspace.diagnostics.record("mcp.start", {"port": int(_port.value)})
 	_refresh()
 	if Connection.has_workspace() and not Connection.write_endpoint(_server.endpoint(), _token):
 		_status.text = "服务器已启动，但未能更新工作目录的连接地址。请重新打开工作目录设置。"
@@ -149,15 +139,11 @@ func _save_settings() -> bool:
 	config.set_value("mcp", "port", int(_port.value))
 	config.set_value("mcp", "path", _path.text.strip_edges())
 	config.set_value("mcp", "client", _client.text.strip_edges())
-	config.set_value("mcp", "share_media", _allow_images.button_pressed)
 	config.set_value("mcp", "share_paths", _allow_paths.button_pressed)
 	config.set_value("mcp", "token", _token)
 	return config.save(CONFIG_PATH) == OK
 
-func _sharing_changed(_pressed: bool) -> void:
-	# Changes apply immediately, including revocation if saving preferences fails.
-	_share_media = _allow_images.button_pressed
-	_share_paths = _allow_paths.button_pressed
+func _path_sharing_changed(_pressed: bool) -> void:
 	if not _save_settings():
 		_status.text = "当前权限已生效，但未能保存到下次启动。"
 
@@ -221,9 +207,6 @@ func _dispatch_tool(id: String, client: String, name: String, arguments: Diction
 		return _format_result(_audio_path())
 	if name == "list_project_artwork":
 		return _format_result(_list_project_artwork(arguments))
-	var uses_media := name in Catalog.IMAGE_TOOLS or name == "list_artwork"
-	if uses_media and not _share_media:
-		return _format_result({"error": "请在 MCP 服务器设置中授权客户端读取图片。"})
 	if not _active_session.is_empty() or _workspace.copilot.busy or _workspace._video.busy or _workspace._analyzing or _workspace.scripts._active:
 		return _format_result({"error": "编辑器正在处理其他任务，请稍后重试。"})
 	var draft: Dictionary = _drafts.get(id, {})
@@ -239,8 +222,6 @@ func _dispatch_tool(id: String, client: String, name: String, arguments: Diction
 		return _format_result(await _import_audio(id, client, arguments, live, generation, signature))
 	if draft.is_empty():
 		draft = _new_draft(id, generation, signature)
-	if _share_media:
-		_prepare_draft_media(draft)
 	_active_session = id
 	var visual_selection: Vector2 = _workspace._agent_audio_selection()
 	var result: Dictionary
@@ -248,9 +229,7 @@ func _dispatch_tool(id: String, client: String, name: String, arguments: Diction
 		result = await _add_artwork(draft, client, arguments, live)
 	else:
 		result = await draft.agent.call_workspace_tool(name, arguments, visual_selection)
-	if uses_media and not _share_media:
-		result = {"error": "客户端的媒体读取权限已关闭。"}
-	elif name == "get_cover" and result.get("provided", false):
+	if name == "get_cover" and result.get("provided", false):
 		result["_preview_image"] = draft.animation.artwork[result.artwork_id].data_url
 	if result.has("finished"):
 		result = await _apply_draft(draft, client, result.finished, live)
@@ -298,16 +277,14 @@ func _audio_path() -> Dictionary:
 		return {"available": false}
 	var full: String = chart.resolve_audio_path(relative)
 	var result := {"available": not full.is_empty() and FileAccess.file_exists(full), "filename": relative.get_file(),
-		"absolute_path_shared": _share_paths}
+		"absolute_path_shared": _allow_paths.button_pressed}
 	if not relative.is_absolute_path():
 		result["project_path"] = relative
-	if _share_paths and result.available:
+	if _allow_paths.button_pressed and result.available:
 		result["path"] = ProjectSettings.globalize_path(full).simplify_path()
 	return result
 
 func _list_project_artwork(arguments: Dictionary) -> Dictionary:
-	if not _share_media:
-		return {"error": "请在 MCP 服务器设置中授权客户端读取曲绘。"}
 	var first: String = _workspace.automatic._find_cover()
 	var paths: Array[String] = _workspace.automatic._project_artwork(first)
 	var offset := Agent._integer(arguments, "offset", 0, 0, paths.size())
@@ -322,8 +299,6 @@ func _add_artwork(draft: Dictionary, client: String, arguments: Dictionary, live
 		return {"error": "请提供 project_path、本机 path 或 data_base64 三种来源中的一种。"}
 	var chart: Node = _workspace.chart
 	if arguments.has("project_path"):
-		if not _share_media:
-			return {"error": "请授权读取工程曲绘。"}
 		var relative := str(arguments.project_path)
 		var first: String = _workspace.automatic._find_cover()
 		if relative not in _workspace.automatic._project_artwork(first):
@@ -370,10 +345,13 @@ func _new_draft(id: String, generation: int, signature: String) -> Dictionary:
 	var chart: Node = _workspace.chart
 	var level := str(chart.chart_info.get("difficulty", "HD")).to_upper().left(2)
 	var plan := Plan.new(chart, level)
-	var animation := AnimationDraft.new(chart, plan.duration_ms, [])
+	var animation := AnimationDraft.new(chart, plan.duration_ms, _workspace.automatic.prepare_project_artwork())
 	var agent := Agent.new()
 	add_child(agent)
-	var options := {"help": _workspace._copilot_help, "editor_view": _workspace.agent_editor_view}
+	var capture := func(times: Array) -> Dictionary:
+		return await Frames.capture(self, chart, plan, animation, times, agent.draft_changes())
+	var options := {"help": _workspace._copilot_help, "editor_view": _workspace.agent_editor_view,
+		"frames": capture, "spectrum": _workspace._capture_agent_spectrum}
 	if not chart.audio_path.is_empty():
 		options["reanalyze"] = _workspace._analyze_for_agent
 	agent.open_tool_session(plan, Automatic.music_for_agent(chart, _workspace._cached_chart_music(), plan.duration_ms),
@@ -381,22 +359,6 @@ func _new_draft(id: String, generation: int, signature: String) -> Dictionary:
 	var draft := {"agent": agent, "plan": plan, "animation": animation, "generation": generation, "signature": signature}
 	_drafts[id] = draft
 	return draft
-
-func _prepare_draft_media(draft: Dictionary) -> void:
-	if draft.get("media_available", false):
-		return
-	draft["media_available"] = true
-	var first: String = _workspace.automatic._find_cover()
-	for path: String in _workspace.automatic._project_artwork(first).slice(0, Automatic.COVER_LIMIT):
-		var image: Dictionary = _workspace.automatic._prepare_cover(path)
-		if not image.is_empty():
-			draft.animation.register_artwork(image)
-	var agent: Node = draft.agent
-	var plan: RefCounted = draft.plan
-	var animation: RefCounted = draft.animation
-	agent._frame_capture = func(times: Array) -> Dictionary:
-		return await Frames.capture(self, _workspace.chart, plan, animation, times, agent.draft_changes())
-	agent._audio_spectrum = _workspace._capture_agent_spectrum
 
 func _can_reclaim_session(id: String) -> bool:
 	var draft: Dictionary = _drafts.get(id, {})

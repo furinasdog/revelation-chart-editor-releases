@@ -1,5 +1,6 @@
 """Local Chat Completions fixture for the audio tools."""
 import base64
+import copy
 import json
 import os
 import pathlib
@@ -51,7 +52,30 @@ class Handler(BaseHTTPRequestHandler):
         try:
             document = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             messages = document["messages"]
-            context = json.loads(messages[1]["content"])["project"]
+            retried = self.server.expected_retry is not None
+            if retried:
+                assert document == self.server.expected_retry, "Text-only fallback changed the original request or tool results"
+                self.server.expected_retry = None
+            initial = messages[1]["content"]
+            context = json.loads(initial[0]["text"] if isinstance(initial, list) else initial)["project"]
+            brief = context["brief"]
+            if brief.startswith("验证"):
+                assert context["use_cover"] and context["artwork"][0]["filename"] == "co-pilot-artwork.png"
+                if retried:
+                    if brief == "验证重试被拒":
+                        self.json_response(400, {"error": {"message": "This model does not support image inputs"}})
+                    else:
+                        assert brief == "验证文字模型"
+                        self.respond([action("reply", message="已用文字继续。")])
+                    return
+                assert len(messages) == 2 and initial[1]["image_url"]["url"].startswith("data:image/jpeg;base64,")
+                if brief == "验证默认曲绘":
+                    self.respond([action("reply", message="已收到曲绘。")])
+                elif brief == "验证鉴权失败":
+                    self.json_response(401, {"error": {"message": "invalid API key"}})
+                else:
+                    self.reject_image(document, stream=brief == "验证文字模型")
+                return
             if context["brief"] == "把第25拍，12秒的普通键向右移动。":
                 assert context["editor"]["playhead"]["label"] == "第 25 拍 · 0:12.0", context["editor"]
                 if len(messages) == 2:
@@ -117,11 +141,14 @@ class Handler(BaseHTTPRequestHandler):
                 return
             share = context["brief"] == "带图检查选段"
             assert context["selected_audio_span_ms"] == [2500, 5000]
-            assert context["audio_figure_available"] == share
+            assert context["audio_figure_available"]
             if len(messages) == 2:
                 actions = [action("get_audio_loudness"), action("view_audio_figure", kind="waveform")]
             elif len(messages) == 4:
                 content = messages[-1]["content"]
+                if not share and not retried:
+                    self.reject_image(document)
+                    return
                 tools = json.loads(content[0]["text"] if share else content)["tool_results"]
                 loudness = tools[0]["result"]
                 assert loudness["unit"] == "dBFS" and loudness["time_ms"] == 2500 and loudness["end_ms"] == 5000
@@ -130,7 +157,7 @@ class Handler(BaseHTTPRequestHandler):
                     check_figure(content[1], tools[1]["result"], "waveform", 2500, 5000)
                     actions = [action("view_audio_figure", kind="spectrum", from_ms=4500, to_ms=7000)]
                 else:
-                    assert "error" in tools[1]["result"]
+                    assert tools[1]["result"]["kind"] == "waveform"
                     actions = [action("reply", message="选段响度已检查。")]
             else:
                 assert share and len(messages) == 6
@@ -144,12 +171,32 @@ class Handler(BaseHTTPRequestHandler):
                 traceback.print_exc(file=log)
             self.send_error(500)
 
+    def reject_image(self, document, stream=False):
+        self.server.expected_retry = copy.deepcopy(document)
+        for message in self.server.expected_retry["messages"]:
+            if isinstance(message["content"], list):
+                assert any(part["type"] == "image_url" for part in message["content"])
+                message["content"] = message["content"][0]["text"]
+        error = {"error": {"code": "unsupported_image_input", "message": "This model only accepts text."}}
+        if stream:
+            body = ("event: error\ndata: " + json.dumps(error) + "\n\n").encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.json_response(400, error)
+
     def respond(self, actions):
         self.respond_message({"content": json.dumps({"actions": actions})})
 
     def respond_message(self, message):
-        body = json.dumps({"choices": [{"message": message}]}).encode()
-        self.send_response(200)
+        self.json_response(200, {"choices": [{"message": message}]})
+
+    def json_response(self, status, document):
+        body = json.dumps(document).encode()
+        self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
@@ -160,5 +207,6 @@ class Handler(BaseHTTPRequestHandler):
 
 
 with HTTPServer(("127.0.0.1", 0), Handler) as server:
+    server.expected_retry = None
     pathlib.Path(sys.argv[1]).write_text(str(server.server_port))
     server.serve_forever()

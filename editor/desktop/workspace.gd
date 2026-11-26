@@ -391,7 +391,6 @@ func _build_menu() -> void:
 	_copilot_menu.set_item_as_checkable(_copilot_item, true)
 	_add_menu(row, "帮助", [["功能速查…", _open_feature_finder], ["首次设置…", _onboarding.open],
 		["首次制谱教程…", _onboarding.open_beginner], ["原版迁移引导…", _onboarding.open_migration],
-		["8 拍练习谱…", _open_practice],
 		[], ["版本更新公告…", _open_release_notes], ["导出错误包…", _open_diagnostic_export], ["关于更好的制谱器…", _open_about]])
 	_audio_label = _label("未导入音频", 13)
 	_audio_label.mouse_filter = Control.MOUSE_FILTER_PASS
@@ -530,11 +529,6 @@ func _open_hand_guide() -> void:
 	var guide := preload("res://desktop/hand_guide.gd").new()
 	host.add_child(guide)
 	guide.open_for(chart, chart.selected_note_id)
-
-func _open_practice(step := 0) -> void:
-	var practice := preload("res://desktop/practice_chart.gd").new()
-	host.add_child(practice)
-	practice.open_lesson(step)
 
 func _restore_previous_session() -> void:
 	if sidebar.restore_last_session():

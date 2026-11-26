@@ -20,8 +20,20 @@ func _run() -> void:
 	desk.automatic._settings = {"url": args[1], "model": "mock-audio", "key": "test-only"}
 	desk._set_copilot_visible(true)
 	var dock: PanelContainer = desk.copilot
+	var agent: Node = dock._agent
+	var caption := {"type": "text", "text": "封面说明"}
+	var result_part := {"type": "text", "text": "工具结果"}
+	agent._messages.assign([{"role": "user", "content": [caption, result_part]}])
+	if agent._remove_image_inputs():
+		push_error("A multipart text request must not trigger an image fallback.")
+		quit(1)
+		return
+	agent._messages[0].content.insert(1, {"type": "image_url", "image_url": {"url": "data:image/png;base64,test"}})
+	if not agent._remove_image_inputs() or agent._messages[0].content != "封面说明\n工具结果":
+		push_error("Removing image pixels must preserve all text parts.")
+		quit(1)
+		return
 	for share in [false, true]:
-		dock._share_art.button_pressed = share
 		dock._editor.text = "带图检查选段" if share else "仅用文字检查选段"
 		dock._submit()
 		var deadline := Time.get_ticks_msec() + 18000
@@ -29,7 +41,7 @@ func _run() -> void:
 			await process_frame
 		var expected := "选段波形和频谱已检查。" if share else "选段响度已检查。"
 		if dock.busy or dock._history[-1].get("text", "") != expected:
-			push_error("Audio tools did not deliver the requested text/image results.")
+			push_error("Audio tools did not deliver the requested text/image results: " + str(dock._history[-1]) + " " + dock._status.text)
 			quit(1)
 			return
 	if not desk.chart.notes.is_empty():
@@ -119,5 +131,22 @@ func _run() -> void:
 		push_error("Ruler lookup, measured audio evidence and approval must refer to the same note.")
 		quit(1)
 		return
-	print("AGENT_AUDIO_AND_SHAPE_SMOKE verified")
+	var cover := Image.create_empty(80, 64, false, Image.FORMAT_RGB8)
+	cover.fill(Color.TEAL)
+	if cover.save_png(desk.chart.get_root_dir().path_join("co-pilot-artwork.png")) != OK:
+		quit(1)
+		return
+	var scenarios := {"验证默认曲绘": "已收到曲绘。", "验证文字模型": "已用文字继续。", "验证鉴权失败": "HTTP 401",
+		"验证重试被拒": "HTTP 400"}
+	for prompt: String in scenarios:
+		dock._editor.text = prompt
+		dock._submit()
+		deadline = Time.get_ticks_msec() + 18000
+		while dock.busy and Time.get_ticks_msec() < deadline:
+			await process_frame
+		if dock.busy or not str(dock._history[-1].get("text", "")).contains(scenarios[prompt]):
+			push_error("Unexpected cover handling for %s: %s" % [prompt, dock._history[-1]])
+			quit(1)
+			return
+	print("AGENT_AUDIO_AND_SHAPE_SMOKE verified (default artwork, text-only retry and auth errors)")
 	quit()

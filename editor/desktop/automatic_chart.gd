@@ -103,6 +103,14 @@ func _project_artwork(default_cover: String) -> Array[String]:
 				paths.append(path)
 	return paths
 
+func prepare_project_artwork() -> Array[Dictionary]:
+	var images: Array[Dictionary] = []
+	for path: String in _project_artwork(_find_cover()).slice(0, COVER_LIMIT):
+		var image := _prepare_cover(path)
+		if not image.is_empty():
+			images.append(image)
+	return images
+
 func _prepare_cover(path: String) -> Dictionary:
 	var image: Image = _workspace.chart.resolve_image(path)
 	if image == null or image.is_empty() or path.is_absolute_path():

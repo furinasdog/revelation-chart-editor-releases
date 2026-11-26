@@ -21,6 +21,12 @@ func _check(condition: bool, message: String) -> void:
 
 func _run() -> void:
 	var args := OS.get_cmdline_user_args()
+	var legacy := ConfigFile.new()
+	legacy.load(MCP.CONFIG_PATH)
+	legacy.set_value("mcp", "share_media", false)
+	if legacy.save(MCP.CONFIG_PATH) != OK:
+		quit(2)
+		return
 	if args.size() != 1 or change_scene_to_file("res://main/main.tscn") != OK:
 		quit(2)
 		return
@@ -31,9 +37,14 @@ func _run() -> void:
 	if not workspace.import_audio(args[0], false, false):
 		quit(2)
 		return
+	var cover := Image.create_empty(96, 54, false, Image.FORMAT_RGB8)
+	cover.fill(Color("#623597"))
+	_check(cover.save_png(workspace.chart.get_root_dir().path_join("mcp-project-cover.png")) == OK, "Create project artwork")
 	_mcp = workspace.mcp
 	_check(not _mcp._server.is_running(), "MCP starts disabled")
 	_mcp.open()
+	var boxes: Array[Node] = _mcp._dialog.find_children("*", "CheckBox", true, false)
+	_check(boxes == [_mcp._allow_paths], "MCP settings only ask about sharing the local audio path")
 	_mcp._dialog.hide()
 	if not OS.get_environment("REVELATION_TEST_MCP_PORT").is_empty():
 		var port := OS.get_environment("REVELATION_TEST_MCP_PORT")
@@ -52,6 +63,9 @@ func _run() -> void:
 		quit(1)
 		return
 	var server: Node = _mcp._server
+	var saved := ConfigFile.new()
+	_check(saved.load(MCP.CONFIG_PATH) == OK and not saved.has_section_key("mcp", "share_media"),
+		"Saving connection settings retires the old disabled media preference")
 	for version in ["HTTP/1.0", "HTTP/1.1"]:
 		var header := "POST /mcp/editor %s\r\nHost: 127.0.0.1:%d\r\nAuthorization: Bearer %s\r\nContent-Type: application/json\r\nContent-Length: 27" % [version, server._port, _mcp._token]
 		var request: Dictionary = server._parse_request(header)
@@ -96,8 +110,19 @@ func _run() -> void:
 		"Discover every Agent tool, got %s" % str(names))
 	call = await _tool("query_reference_chart", {"id": "phrase-study", "section": "paths", "limit": 1})
 	_check(not call.result.get("isError", true) and call.result.structuredContent.total == 2, "Read the built-in reference through MCP")
-	call = await _tool("view_reference_frame", {"id": "phrase-study", "time_ms": 1000})
-	_check(call.result.get("isError", false), "Reference images also require media sharing")
+	call = await _tool("list_project_artwork", {})
+	_check(call.result.structuredContent.items.any(func(item: Dictionary): return item.filename == "mcp-project-cover.png"),
+		"Existing clients with media disabled can discover project artwork")
+	call = await _tool("list_artwork", {})
+	var matching: Array = call.result.structuredContent.items.filter(func(item: Dictionary): return item.filename == "mcp-project-cover.png")
+	if not _require(matching.size() == 1, "Default artwork catalog includes the cover"):
+		quit(1)
+		return
+	call = await _tool("get_cover", {"artwork_id": matching[0].artwork_id})
+	var media: Array = call.result.get("content", [])
+	var decoded := Image.new()
+	_check(media.size() == 2 and media[1].type == "image" and decoded.load_jpg_from_buffer(Marshalls.base64_to_raw(media[1].data)) == OK
+		and decoded.get_size() == cover.get_size(), "The initial session returns the project cover as an MCP image")
 	if not OS.get_environment("REVELATION_PYTHON").is_empty():
 		call = await _tool("run_rpy", {"source": "result(len(chart.notes()))"})
 		_check(not call.result.get("isError", true) and call.result.structuredContent.result == 0, "Run a restricted read-only script")
@@ -131,7 +156,9 @@ func _run() -> void:
 	call = await _tool("get_audio_path", {})
 	_check(call.result.structuredContent.available and not call.result.structuredContent.has("path"), "Keep absolute audio path private by default")
 	call = await _tool("view_audio_figure", {"kind": "waveform", "from_ms": 400, "to_ms": 2400})
-	_check(call.result.get("isError", false), "Keep media private by default")
+	media = call.result.get("content", [])
+	_check(media.size() == 2 and media[1].type == "image" and decoded.load_jpg_from_buffer(Marshalls.base64_to_raw(media[1].data)) == OK,
+		"The waveform is readable without sharing local audio paths")
 	var note := {"type": "note", "lane": 3, "time_ms": 2100, "x": 660, "y": 400}
 	call = await _tool("add_notes", {"notes": [note]})
 	_check(not call.result.get("isError", true) and workspace.chart.notes.is_empty(), "Writes stay in the MCP draft")
@@ -159,23 +186,8 @@ func _run() -> void:
 	_session = ""
 	call = await _rpc("initialize", init)
 	_session = _session_id(call)
-	var same_session := _session
 	await _tool("get_project_context", {})
-	_mcp._allow_images.button_pressed = true
 	_mcp._allow_paths.button_pressed = true
-	call = await _tool("view_audio_figure", {"kind": "waveform", "from_ms": 400, "to_ms": 2400})
-	var media: Array = call.result.get("content", [])
-	var decoded := Image.new()
-	var authorized: bool = media.size() == 2 and media[1].type == "image" and _session == same_session
-	_check(authorized and decoded.load_jpg_from_buffer(Marshalls.base64_to_raw(media[1].data)) == OK,
-		"Changing media permissions works in the same session without restart")
-	if not authorized:
-		quit(1)
-		return
-	_mcp._allow_images.button_pressed = false
-	call = await _tool("view_audio_figure", {"kind": "waveform", "from_ms": 400, "to_ms": 2400})
-	_check(call.result.get("isError", false), "Revoking media access immediately blocks the existing session")
-	_mcp._allow_images.button_pressed = true
 	var reference_zip := OS.get_environment("REVELATION_TEST_REFERENCE")
 	if not reference_zip.is_empty():
 		await _check_reference_media(reference_zip)
@@ -272,7 +284,7 @@ func _check_reference_media(reference_zip: String) -> void:
 		return
 	var args := {"id": reference.id, "filename": "background.png"}
 	var call := await _tool("view_reference_artwork", args)
-	_check(call.result.get("isError", false), "Session permission alone does not authorize a reference image")
+	_check(call.result.get("isError", false), "Imported reference artwork retains the permission chosen during import")
 	_check(References.import_local(reference_zip, true, false).get("id") == reference.id, "Update reference image authorization")
 	call = await _tool("view_reference_artwork", args)
 	var media: Array = call.result.get("content", [])

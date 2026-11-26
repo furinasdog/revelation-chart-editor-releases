@@ -268,6 +268,9 @@ func _check_tutorial(desktop: Node, practice_audio: String) -> void:
 	tutorial._check_progress()
 	_check(not tutorial._next.disabled, "A slide completes yellow-key practice")
 	tutorial._next.pressed.emit()
+	desktop._results_tabs.current_tab = 1
+	tutorial._action.pressed.emit()
+	_check(desktop._results_tabs.current_tab == 0 and desktop.preview.visible, "Slide-path tutorial returns to the current chart preview")
 	tutorial._next.pressed.emit()
 	tutorial._action.pressed.emit()
 	tutorial._check_progress()
@@ -275,6 +278,9 @@ func _check_tutorial(desktop: Node, practice_audio: String) -> void:
 	desktop._exit_game_mode.pressed.emit()
 	_check(not desktop.chart.rt_playing and not desktop.chart.desktop_game_mode, "Returning to editing pauses gameplay preview")
 	tutorial._next.pressed.emit()
+	tutorial._action.pressed.emit()
+	_check(desktop.grid.background_track_visible and desktop._tabs.get_current_tab_control() == desktop._background_page,
+		"Background tutorial opens the current chart's background timeline and inspector")
 	tutorial._next.pressed.emit()
 	tutorial._action.pressed.emit()
 	_check(desktop.automatic._settings_dialog.visible, "API key tutorial opens the actual settings dialog")

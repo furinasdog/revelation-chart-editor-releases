@@ -60,7 +60,6 @@ var _requested_difficulty := ""
 var _stop_button: Button
 var _retry_button: Button
 var _retry_message := ""
-var _share_art: CheckBox
 var _auto_approve: CheckBox
 var _reviewer := Reviewer.new()
 var _review_turn := 0
@@ -133,16 +132,11 @@ func setup(workspace: Node) -> void:
 	_status.hide()
 	body.add_child(_status)
 	_build_approval(body)
-	_share_art = CheckBox.new()
-	_share_art.text = "允许发送曲绘、预览和音频图"
-	_share_art.tooltip_text = "可向所配置的模型发送曲绘、谱面预览、频谱图和波形图。"
-	var permissions := HFlowContainer.new()
-	body.add_child(permissions)
-	permissions.add_child(_share_art)
 	_auto_approve = CheckBox.new()
 	_auto_approve.text = "自动审批"
 	_auto_approve.tooltip_text = "读取直接执行。使用当前模型独立审查其他操作，超出要求时拒绝，不确定时请你确认。每次审查会调用一次模型。"
-	permissions.add_child(_auto_approve)
+	_auto_approve.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	body.add_child(_auto_approve)
 	add_child(_reviewer)
 	_preserve.text = "仅新增，保留已有音符"
 	_preserve.hide()
@@ -497,19 +491,18 @@ func _send_prompt(text: String, difficulty := "") -> bool:
 			lines.append("「%s」\n%s" % [topic.menu, topic.instructions])
 		_complete("\n\n".join(lines))
 		return true
-	var share := _share_art.button_pressed
-	_prepare_draft(share)
+	_prepare_draft()
 	var music := Automatic.music_for_agent(chart, _workspace._cached_chart_music(), _plan.duration_ms)
-	_workspace.diagnostics.record("copilot.start", {"image_authorized": share})
+	_workspace.diagnostics.record("copilot.start", {"artwork_count": _animation.artwork.size()})
 	_agent.start(_plan, music, _workspace.automatic._estimate_mood(), settings, text.left(4000), _animation, true,
-		_capture if share else Callable(), _workspace._analyze_for_agent,
+		_capture, _workspace._analyze_for_agent,
 		{"approve": _request_approval, "review_commit": _auto_approve.button_pressed, "history": history, "help": _workspace._copilot_help,
-			"editor_view": _workspace.agent_editor_view, "import_audio": _import_audio.bind(share)},
+			"editor_view": _workspace.agent_editor_view, "import_audio": _import_audio},
 		{"selection": _workspace._agent_audio_selection(),
-			"spectrum": _workspace._capture_agent_spectrum if share else Callable()})
+			"spectrum": _workspace._capture_agent_spectrum})
 	return true
 
-func _prepare_draft(share: bool) -> void:
+func _prepare_draft() -> void:
 	var chart: Node = _workspace.chart
 	_original_chart = chart._snapshot_notes()
 	_project_signature = _signature(_original_chart)
@@ -519,16 +512,9 @@ func _prepare_draft(share: bool) -> void:
 		_original_rows = _plan.notes.duplicate(true)
 		_plan.edit_span = _selected_span
 		_plan.additions_only = _preserve.button_pressed
-	var artwork: Array[Dictionary] = []
-	if share:
-		var first: String = _workspace.automatic._find_cover()
-		for path: String in _workspace.automatic._project_artwork(first).slice(0, Automatic.COVER_LIMIT):
-			var cover: Dictionary = _workspace.automatic._prepare_cover(path)
-			if not cover.is_empty():
-				artwork.append(cover)
-	_animation = AnimationDraft.new(chart, _plan.duration_ms, artwork)
+	_animation = AnimationDraft.new(chart, _plan.duration_ms, _workspace.automatic.prepare_project_artwork())
 
-func _import_audio(arguments: Dictionary, share: bool) -> Dictionary:
+func _import_audio(arguments: Dictionary) -> Dictionary:
 	var path := AudioImport.local_path(arguments.get("path"))
 	if path.is_empty():
 		return {"error": "请指定本机 WAV、MP3 或 OGG 的绝对路径。"}
@@ -542,7 +528,7 @@ func _import_audio(arguments: Dictionary, share: bool) -> Dictionary:
 	if not result.has("error"):
 		_generation = _workspace._document_generation
 		_history_generation = _generation
-		_prepare_draft(share)
+		_prepare_draft()
 		_agent.rebase_after_audio_import(_plan, _animation,
 			Automatic.music_for_agent(_workspace.chart, _workspace._cached_chart_music(), _plan.duration_ms),
 			_workspace.automatic._estimate_mood(), _workspace._agent_audio_selection())
@@ -584,7 +570,8 @@ func _capture(times: Array) -> Dictionary:
 func _on_action(name: String, arguments: Dictionary) -> void:
 	if busy:
 		if name in ["请求模型", "重试模型请求"]:
-			_begin_step("%s · %s · %s" % [name, arguments.service, arguments.model])
+			var caption := "纯文字重试" if name == "重试模型请求" and arguments.get("text_only", false) else name
+			_begin_step("%s · %s · %s" % [caption, arguments.service, arguments.model])
 		elif name != "等待重试":
 			var caption: String = _workspace.automatic._action_caption(name, "执行工具")
 			if name == "get_editor_help":
@@ -928,7 +915,6 @@ func _refresh_controls() -> void:
 	_send_button.disabled = busy or _editor.text.strip_edges().is_empty()
 	_stop_button.visible = busy
 	_retry_button.visible = busy and not _retry_message.is_empty()
-	_share_art.disabled = busy
 	_auto_approve.disabled = busy
 	if is_instance_valid(_last_edit):
 		_last_edit.disabled = busy

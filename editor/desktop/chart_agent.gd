@@ -40,7 +40,7 @@ You are in interactive editing mode. Address the user's newest request and retai
 For questions about using this editor, call get_editor_help: {"query":"导出"}. Use the returned menu names in Chinese. If you already have what you need and no writes were made, you may answer as ordinary text for immediate streaming. For reply actions place name before arguments and message first within arguments so users can read the answer as it arrives. For music questions read available timing data first. Call analyze_audio for missing results or when a different engine is needed.
 """
 const FRAME_PROMPT := """
-Visual review tool (enabled by the user): view_rendered_frames: {"times_ms":[700,1800,3200]}. Request 1–6 chart times. It renders the current draft in game view; images are ordered left to right, then top to bottom. Inspect the result before finish. For masks compare just before the switch, during the reveal and after closing. Check that the subject is visible and the notes are readable. Request at most one montage per round, then wait for the returned image before continuing or finishing.
+Visual review tool: view_rendered_frames: {"times_ms":[700,1800,3200]}. Request 1–6 chart times. It renders the current draft in game view; images are ordered left to right, then top to bottom. Inspect the result before finish. For masks compare just before the switch, during the reveal and after closing. Check that the subject is visible and the notes are readable. Request at most one montage per round, then wait for the returned image before continuing or finishing.
 """
 const HUMAN_CHARTING_PROMPT := """
 Charting practice observed in the human-made references (“风屿” and “Why Is My World Full Of Sadness”):
@@ -67,12 +67,12 @@ check_conflicts: {} finds overlaps, excessive chords, uncomfortable jumps and qu
 
 const ANIMATION_PROMPT := """
 Animation direction:
-- When requires_visible_animation is true, deliver visible motion that follows musical phrases. A dark mask, static image swap, or uniform fade can support contrast, but cannot satisfy the animation request on its own. Add a deliberate moving or scaling graphic, an artwork pan, or an aperture that visibly opens and closes against a mask. For a full song, give the same visual motif distinct treatments at two or more genuine transitions, such as a quiet entrance and a rising section. Consult regional RMS, onsets and section cues to choose where motion starts and ends. Use list_animation_layers and check has_visible_motion before finish. If frame review is enabled, inspect the same motif before, during and after its change.
+- When requires_visible_animation is true, deliver visible motion that follows musical phrases. A dark mask, static image swap, or uniform fade can support contrast, but cannot satisfy the animation request on its own. Add a deliberate moving or scaling graphic, an artwork pan, or an aperture that visibly opens and closes against a mask. For a full song, give the same visual motif distinct treatments at two or more genuine transitions, such as a quiet entrance and a rising section. Consult regional RMS, onsets and section cues to choose where motion starts and ends. Use list_animation_layers and check has_visible_motion before finish. If the frame review tool is available, inspect the same motif before, during and after its change.
 - Before authoring, get_animation_cues {"from_ms":0,"limit":18}. Use the returned phrase anchors and coarse loudness for the intro, section change, accent and release. Use the selected span if the user requested one. Leave quiet passages mostly still; one change per phrase is usually enough. Land major motions on the measured anchor, not an arbitrary offset. A hold between two similar poses is fine.
 - Use solid masks and circular background reveals in the style of the “领主” chart. For full songs, plan two to four coordinated masks with different roles: an opaque or near-opaque dark opening, a tinted translucent mask for a new section, optionally a transparent release. Place them only at meaningful musical changes. Use add_mask_reveal to expand the visible artwork from a focal point and close with the phrase; stagger distinct reveals rather than flashing or flipping colors every beat. Choose muted shades already present in the artwork and reuse assets that match. If the user specifies a short span, scale the number of effects to that span.
 - Design one visual idea for the song, with a recognizable focal point. When the user has supplied artwork, inspect it and set use_cover_artwork=true on a mask cue to place it below the masks, or animate it as a cover layer when the brief calls for camera motion. Keep the subject within frame, preserve the aspect ratio, and prefer a subtle pan or push-in. Favor scale 1.0–1.12, movement of roughly 24–80 px and rotation near 0°. Keep the artwork visible during a meaningful section.
 - When multiple selected images are provided, identify each by its artwork_id. Use all selected artwork across meaningful sections with legible durations. Choose the order based on image content, song structure and the brief. Change backgrounds at phrase or section boundaries, and plan separate mask opacity for each image. Avoid rapid cycling or sending multiple opaque foreground layers over gameplay.
-- Pale artwork can wash out white hit rings, slide markers and thin hold lines. If the artwork looks bright, get_cover reports bright_playfield=true, or rendered frames show weak contrast, put a dark low-saturation mask over the artwork as the bottom image. Start around 0.45–0.65 opacity, adjust for contrast, and avoid large unmasked reveals over dense notes or a hold release. Reserve bright reveals for quieter spans or the edges; review representative busy frames if the user enabled frame inspection. A semi-transparent cover animation above the mask can undo darkening, so use the background mask path for bright artwork.
+- Pale artwork can wash out white hit rings, slide markers and thin hold lines. If the artwork looks bright, get_cover reports bright_playfield=true, or rendered frames show weak contrast, put a dark low-saturation mask over the artwork as the bottom image. Start around 0.45–0.65 opacity, adjust for contrast, and avoid large unmasked reveals over dense notes or a hold release. Reserve bright reveals for quieter spans or the edges; review representative busy frames when frame inspection is available. A semi-transparent cover animation above the mask can undo darkening, so use the background mask path for bright artwork.
 - Keep the central play area readable. A mask asset can also be used as a moving band or shutter in a mask layer. Prefer a narrow shape near the edge and low opacity. Avoid multiple overlapping shapes, back-and-forth spins, flashing, and changing position, scale, rotation and opacity at every beat.
 - Use smooth easing for camera movement, out for settling, and linear only for deliberate steady motion. Keep large shifts and opacity changes spread over at least a beat and use 3–7 intentional poses per layer unless the brief needs more. Do not create visual changes during a playable section just to fill time.
 - The human references build scenes with recurring thin lines, outlined rectangles and circular accents. Layer them by function: a steady stage treatment for the current phrase, a brief direction cue from the edge, then a fade. A pair of related cues can enter a half beat or beat apart and lead the eye toward the next phrase. For a busy peak reuse a familiar geometry with a wider or stronger gesture rather than introducing unrelated layers. To reproduce the technique with available tools, use a thin low-opacity mask layer (about 8–24 px for a line) away from judgement positions, and add_mask_reveal for the occasional circle. Prefer preserving legibility over reproducing the references' dense stack of layers.
@@ -118,6 +118,7 @@ var _editor_view: Callable
 var _audio_selection := Vector2(-1, -1)
 var _frame_requests := 0
 var _visual_message_index := -1
+var _text_only := false
 var _chart: Node
 var _reanalyze: Callable
 var _analysis_requests := 0
@@ -172,6 +173,7 @@ func start(plan: RefCounted, music: Dictionary, moods: Array, settings: Dictiona
 	_import_audio = chat.get("import_audio", Callable())
 	_stream_disabled = false
 	_stream_usage_disabled = false
+	_text_only = false
 	_analysis_requests = 0
 	_animation = animation
 	_motion_requested = animation != null and (not _approve.is_valid() or _requests_new_animation(brief))
@@ -212,11 +214,12 @@ func start(plan: RefCounted, music: Dictionary, moods: Array, settings: Dictiona
 		var visual_content := [{"type": "text", "text": task}]
 		for image: Dictionary in animation.artwork_catalog():
 			var id: String = image.artwork_id
-			visual_content.append({"type": "text", "text": "Artwork %s (%s):" % [id, image.filename]})
 			visual_content.append({"type": "image_url", "image_url": {"url": animation.artwork[id].data_url}})
 		content = visual_content
 	var interactive := _approve.is_valid()
 	var instructions := PROTOCOL + "\n" + NOTE_TOOLS + "\n"
+	if use_cover:
+		instructions += "When artwork images are attached, they follow the order of the project artwork catalog.\n"
 	if interactive:
 		instructions += Guidance.EDITOR
 	else:
@@ -301,8 +304,8 @@ func retry_request() -> void:
 	_retry += 1
 	_send(true)
 
-func _send(retry := false) -> void:
-	if not _active:
+func _send(retry := false, expected_run := -1) -> void:
+	if not _active or (expected_run >= 0 and expected_run != _run_id):
 		return
 	if not retry:
 		_round += 1
@@ -312,7 +315,7 @@ func _send(retry := false) -> void:
 		return
 	_using_stream = not _stream_disabled
 	action_started.emit("请求模型" if not retry else "重试模型请求", {"round": _round, "model": _model, "retry": _retry,
-		"service": _endpoint.get_slice("://", 1).get_slice("/", 0), "stream": _using_stream})
+		"service": _endpoint.get_slice("://", 1).get_slice("/", 0), "stream": _using_stream, "text_only": _text_only})
 	var payload := _request_payload()
 	if payload.is_empty():
 		_finish(false, "本轮上下文超过限制。请缩短制谱范围或减少同时查看的曲绘和预览帧。")
@@ -369,6 +372,47 @@ static func _text_bytes(messages: Array[Dictionary]) -> int:
 					total += str(part.get("text", "")).to_utf8_buffer().size()
 	return total
 
+static func _image_input_rejected(code: int, error: Variant) -> bool:
+	if code not in [200, 400, 404, 415, 422, 501] or error == null:
+		return false
+	var reason := str(error).to_lower().replace("_", " ").replace("-", " ")
+	var model := "model" in reason or "模型" in reason
+	if model and ("only accepts text" in reason or "only supports text" in reason or "text only" in reason or "仅支持文本" in reason):
+		return true
+	if "content" in reason and ("expected a string" in reason or "must be a string" in reason or "must be string" in reason or "valid string" in reason):
+		return true
+	var image_input := "image" in reason or "vision" in reason or "multimodal" in reason or "图片" in reason or "图像" in reason
+	if not image_input:
+		return false
+	for marker: String in ["unsupported", "not support", "doesn't support", "only support", "only be used", "can only",
+			"text only", "not allowed", "not enabled", "not available", "no endpoints", "invalid content type",
+			"not a valid", "不支持", "不接受", "仅支持", "只支持"]:
+		if marker in reason:
+			return true
+	return false
+
+func _remove_image_inputs() -> bool:
+	var removed := false
+	for message: Dictionary in _messages:
+		if not message.content is Array:
+			continue
+		var remaining := []
+		var text_parts := PackedStringArray()
+		for part: Variant in message.content:
+			if part is Dictionary and part.get("type") == "image_url":
+				continue
+			remaining.append(part)
+			if part is Dictionary and part.get("type") == "text":
+				text_parts.append(str(part.get("text", "")))
+		if remaining.size() < message.content.size():
+			# Text-only endpoints also reject an array containing just text parts.
+			message.content = "\n".join(text_parts) if text_parts.size() == remaining.size() else remaining
+			removed = true
+	if removed:
+		_visual_message_index = -1
+		_text_only = true
+	return removed
+
 func _on_response(result: int, code: int, headers: PackedStringArray, body: PackedByteArray) -> void:
 	if not _active:
 		return
@@ -383,12 +427,21 @@ func _on_response(result: int, code: int, headers: PackedStringArray, body: Pack
 		var trace := _response_header(headers, "x-agiplan-trace")
 		request_failed.emit("http_response", {"round": _round, "http_status": code, "transport_status": result,
 			"provider_code": service_code, "trace": trace, "retry": _retry})
+		var detail: Variant = provider_error
+		if detail == null and document is Dictionary:
+			detail = document.get("detail", document.get("message"))
+		if detail == null:
+			detail = body.get_string_from_utf8().left(2048)
+		var image_rejected := _image_input_rejected(code, detail)
+		if image_rejected and not _text_only and _remove_image_inputs():
+			_send.call_deferred(true, _run_id)
+			return
 		if (_using_stream and not _stream_usage_disabled and code in [400, 422] and provider_error is Dictionary
 				and (provider_error.get("param") == "stream_options" or "stream_options" in str(provider_error.get("message", "")))):
 			_stream_usage_disabled = true
 			_send.call_deferred(true)
 			return
-		if _using_stream and service_code not in ["upstream_rejected", "capability_unavailable"] and code in [400, 415, 422, 501]:
+		if _using_stream and not image_rejected and service_code not in ["upstream_rejected", "capability_unavailable"] and code in [400, 415, 422, 501]:
 			_stream_disabled = true
 			_send.call_deferred(true)
 			return
@@ -416,8 +469,6 @@ func _on_response(result: int, code: int, headers: PackedStringArray, body: Pack
 			"quota_exceeded": "服务额度不足", "upstream_timeout": "等待模型上游响应超时",
 			"capability_unavailable": "当前模型不支持本次请求需要的能力",
 			"upstream_rejected": "模型上游拒绝了本次请求"}
-		if ((_animation and not _animation.artwork.is_empty()) or _visual_message_index >= 0) and code in [400, 413, 415, 422]:
-			reasons[code] = "服务拒绝了含图片的请求。请选择支持图片输入的模型，或关闭图片输入后重试。"
 		var reason: String = transport_reasons.get(result, provider_reasons.get(service_code, reasons.get(code, "模型请求失败")))
 		var message := "第 %d 轮 · %s（HTTP %d，连接状态 %d）" % [_round, reason, code, result]
 		if not trace.is_empty():
@@ -579,7 +630,9 @@ func _execute_actions(actions: Array) -> void:
 		elif name == "reply" and not rendered_image.is_empty():
 			response = {"error": "请先查看返回的画面，再回复用户。"}
 		elif name in ["view_rendered_frames", "view_audio_figure", "view_shape_asset", "view_reference_artwork", "view_reference_frame"]:
-			if not rendered_image.is_empty():
+			if _text_only:
+				response = {"error": "当前模型不支持图片输入。请使用谱面数据、曲绘元信息或数值音频分析。"}
+			elif not rendered_image.is_empty():
 				response = {"error": "每轮只能查看一张图，请先查看已经生成的图。"}
 			elif name == "view_audio_figure":
 				response = await _render_audio_figure(arguments)
@@ -678,7 +731,7 @@ static func _limit_tool_result(result: Dictionary, budget: int = TOOL_RESULT_BYT
 
 func _render_frames(arguments: Dictionary) -> Dictionary:
 	if not _frame_capture.is_valid():
-		return {"error": "用户未开启渲染画面查看。"}
+		return {"error": "本次会话无法获取渲染预览。"}
 	if _frame_requests >= FRAME_REQUEST_LIMIT:
 		return {"error": "本次制谱已达到取帧次数上限。"}
 	var requested: Variant = arguments.get("times_ms")
@@ -725,7 +778,7 @@ static func _requests_new_animation(brief: String) -> bool:
 
 func _render_audio_figure(arguments: Dictionary) -> Dictionary:
 	if not _audio_spectrum.is_valid():
-		return {"error": "用户未允许发送音频图。可以用 get_audio_loudness 读取数值。"}
+		return {"error": "本次会话无法获取音频图。可以用 get_audio_loudness 读取数值。"}
 	var kind: String = str(arguments.get("kind", "waveform"))
 	if kind not in ["waveform", "spectrum"]:
 		return {"error": "音频图类型应为 waveform 或 spectrum。"}
@@ -741,7 +794,7 @@ func _render_audio_figure(arguments: Dictionary) -> Dictionary:
 
 func _view_shape_asset(arguments: Dictionary) -> Dictionary:
 	if not _animation or not _audio_spectrum.is_valid():
-		return {"error": "请先启用图形预览授权。"}
+		return {"error": "本次会话无法获取图形预览。"}
 	if _frame_requests >= FRAME_REQUEST_LIMIT:
 		return {"error": "已达到图像查询次数上限。"}
 	_frame_requests += 1
@@ -898,7 +951,7 @@ func _chat_has_changes() -> bool:
 
 func _render_reference(name: String, arguments: Dictionary, run_id: int) -> Dictionary:
 	if not _frame_capture.is_valid() and not _audio_spectrum.is_valid():
-		return {"error": "用户未开启图片查看。"}
+		return {"error": "本次会话无法获取参考图片或画面。"}
 	if _frame_requests >= FRAME_REQUEST_LIMIT:
 		return {"error": "已达到本轮图片查看次数上限。"}
 	_frame_requests += 1

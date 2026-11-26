@@ -98,7 +98,7 @@ internal sealed class EditorProfile(string root)
         new(Prefs,"analysis","music2emo_automatic","自动分析情绪（仅旧版）","true","bool"),new(Prefs,"shortcuts","scheme","快捷键方案","standard","standard|original"),
         new(Agent,"agent","url","API URL",""),new(Agent,"agent","model","模型名称",""),new(Agent,"agent","key","API Key","","secret"),
         new(Mcp,"mcp","port","服务端口","17387","integer",1,65535),new(Mcp,"mcp","path","服务路径","/mcp"),
-        new(Mcp,"mcp","share_media","允许读取媒体","false","bool"),new(Mcp,"mcp","share_paths","共享本地文件路径","false","bool")
+        new(Mcp,"mcp","share_paths","共享本地文件路径","false","bool")
     };
     internal ConfigDocument Config(string name) => new(Path.Combine(root,name));
     internal static void Atomic(string path,string content)

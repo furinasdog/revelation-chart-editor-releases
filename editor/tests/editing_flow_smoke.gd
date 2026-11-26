@@ -2,7 +2,6 @@ extends SceneTree
 
 const Exchange := preload("res://desktop/note_exchange.gd")
 const Guide := preload("res://desktop/hand_guide.gd")
-const Practice := preload("res://desktop/practice_chart.gd")
 var failures := 0
 
 func _initialize() -> void:
@@ -57,21 +56,6 @@ func run() -> void:
 	check_cache_isolation()
 	check_clipboard(c)
 	check_copilot(d)
-	var practice := Practice.new()
-	d.host.add_child(practice)
-	practice.open_lesson(0)
-	check(practice.player.span.y == 4000 and practice.player.scenes.size() == 3, "Eight-beat practice")
-	practice._set_endpoint(Vector2(460,350))
-	practice.player.select(0,0,true)
-	check(practice.player.playing and practice.endpoint == Vector2(460,350), "Edited practice endpoint can replay")
-	practice._reset()
-	check(practice.endpoint == practice.DEFAULT_END and not practice.player.playing, "Reset restores practice endpoint")
-	practice.lesson.select(1)
-	practice._reset()
-	for i in 3:
-		practice._compare(i)
-		check(practice.player.active == i and practice.player.position_ms == 1500, "Same-beat mask comparison")
-	practice.hide()
 	await process_frame
 	print("EDITING_FLOW failures=",failures)
 	quit(1 if failures else 0)
@@ -124,7 +108,7 @@ func check_copilot(d: Node) -> void:
 	agent.busy = true
 	agent._start_steps()
 	agent._generation = d._document_generation
-	agent._prepare_draft(false)
+	agent._prepare_draft()
 	var original: Dictionary = c._snapshot_notes().notes
 	var row := {"type":"note","time_ms":14000,"lead_ms":800,"x":450,"y":500,"lane":2}
 	check(agent._plan.edit("delete_notes",[original.keys()[0]]).has("error"), "Preserve existing notes")

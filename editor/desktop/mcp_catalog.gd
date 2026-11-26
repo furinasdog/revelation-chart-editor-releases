@@ -8,7 +8,6 @@ const Shapes := preload("res://desktop/agent_shapes.gd")
 const RANGE := ["from_ms", "to_ms", "offset", "limit"]
 const POSITIONS := ["x", "y", "end_x", "end_y", "mid_x", "mid_y", "approach_x", "approach_y"]
 const FIGURES := ["waveform", "spectrum"]
-const IMAGE_TOOLS := ["get_cover", "check_cover_contrast", "view_rendered_frames", "view_audio_figure", "view_shape_asset", "view_reference_artwork", "view_reference_frame"]
 const MCP_TITLES := {"get_audio_path": "读取音频文件路径", "list_project_artwork": "列出工程图片", "add_artwork": "添加曲绘"}
 const DESCRIPTIONS := {
 	"get_bpm": "Read detected tempo in chart milliseconds and the tempo set in the editor.",
@@ -25,7 +24,7 @@ const DESCRIPTIONS := {
 	"check_conflicts": "Report blocking overlaps, chord sizes, travel and hold timing, plus advisory warnings and named slide-direction counts. Use this to diagnose chart errors.",
 	"get_animation_cues": "Read phrase anchors and coarse loudness to plan animation transitions.",
 	"list_animation_layers": "Read existing slots, draft layers, masks and scheduled cues.",
-	"get_cover": "Read the authorized artwork catalog and view one image by artwork_id.",
+	"get_cover": "Read the project artwork catalog and view one image by artwork_id.",
 	"create_solid_mask": "Create a solid-color draft mask. Returns a mask ID to use in set_mask_cue or add_animation_layer.",
 	"set_mask_cue": "Schedule a generated mask and optionally select the artwork below it. Use an empty mask_id to remove this draft cue.",
 	"add_mask_reveal": "Add a feathered circular reveal centered on the given coordinates while a mask is active.",

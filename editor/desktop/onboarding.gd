@@ -37,6 +37,7 @@ var _comparison: Label
 var _guide_kind := ""
 var _original_capture := ""
 var _original_reference := Chart.ReferenceMode.TRADITIONAL
+var _original_background_track := false
 var _heard := false
 var _exported := false
 var _active_task := ""
@@ -372,13 +373,13 @@ func _beginner_steps() -> Array[Dictionary]:
 			_workspace._tools[1], "选择滑键", _workspace._choose_tool.bind(1), "slide", "在空轨放下一个滑键后继续。"),
 		_step("给黄键画一段滑动路径",
 			"选中刚放下的黄键，点击预览上方的「添加滑动路径」，拖动「终点 · 判定」。从前一拍回放，观察黄键在终点收圈。",
-			_workspace._result_heading, "打开 8 拍练习", _workspace._open_practice),
+			_workspace._result_heading, "显示谱面预览", _show_preview),
 		_step("试听谱面",
 			"在标尺上定位，点击「播放」或按当前播放键 %s。右上「预览控制」可以试玩或循环选区，试玩后点「返回编辑」。" % _shortcut("play"),
 			_workspace._result_heading, "从当前拍试玩", _workspace._play_from_current, "play", "试听一次后继续。"),
 		_step("按需添加歌词或背景",
 			"从「文件」导入曲绘或歌词。展开「背景与遮罩」，在副歌前压暗背景，再在第一拍添加圆形揭示。点片段可循环预览。",
-			_workspace._background_toggle, "练习同拍对比", _workspace._open_practice.bind(1)),
+			_workspace._background_toggle, "打开背景与遮罩", _workspace._set_background_track.bind(true)),
 		_step("连接你的制谱 Agent",
 			"打开「工具 → Agent 设置」。填写服务地址、API Key 和模型名称并保存。DeepSeek 的地址是 https://api.deepseek.com，模型可填 deepseek-flash。密钥只填在设置里；想先手工制谱可跳过此步。",
 			_workspace._copilot_menu.get_parent(), "填写 API Key", _workspace.automatic.open_settings, "agent_config", "保存有效格式的设置后继续，或点「跳过本步」。"),
@@ -442,6 +443,7 @@ func _start(steps: Array[Dictionary]) -> void:
 	if _steps.is_empty():
 		_original_capture = _workspace._analysis_panel.selected_id
 		_original_reference = _workspace.sidebar.guide_mode
+		_original_background_track = _workspace.grid.background_track_visible
 	_steps = steps
 	_active_task = ""
 	_show_step(0)
@@ -488,6 +490,8 @@ func close_guide() -> void:
 	if not _steps.is_empty():
 		_workspace._analysis_panel.select(_original_capture)
 		_workspace.sidebar.set_guide_mode(_original_reference)
+		if _workspace.grid.background_track_visible != _original_background_track:
+			_workspace._set_background_track(_original_background_track)
 	_steps.clear()
 	_active_task = ""
 	_note_positions.clear()
