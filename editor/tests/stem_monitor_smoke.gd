@@ -42,9 +42,17 @@ func _run() -> void:
 	await process_frame
 	await process_frame
 	var page: ScrollContainer = desk._analysis_panel
+	var capture_source: OptionButton = page._source
+	page.ensure_control_visible(page._run)
+	await process_frame
+	var capture_gap: float = page._run.get_global_rect().position.y - capture_source.get_global_rect().end.y
+	_check(page.get_global_rect().grow(1).encloses(capture_source.get_global_rect()) and capture_gap >= 0 and capture_gap < 12,
+		"Short inspector shows the capture source directly above its action")
 	page.ensure_control_visible(panel._action)
 	await process_frame
-	_check(page.get_global_rect().grow(1).encloses(panel._action.get_global_rect()) and page.get_global_rect().end.y <= desk._track_bar.get_global_rect().position.y, "Short inspector can scroll to separation without covering transport")
+	var toolbar_gap: float = desk._track_bar.get_global_rect().position.y - page.get_global_rect().end.y
+	_check(page.get_global_rect().grow(1).encloses(panel._action.get_global_rect()) and toolbar_gap >= 12,
+		"Short inspector can scroll to separation with space above the timeline toolbar")
 	var choices: ScrollContainer = desk._analysis_panel._choices.beat.get_parent().get_parent().get_parent()
 	_check(choices.size.y >= desk._analysis_panel._choices.beat.size.y, "Capture choices retain a visible row")
 	var folder := ProjectSettings.globalize_path("user://monitor-test-%s" % Time.get_ticks_usec())
@@ -54,8 +62,10 @@ func _run() -> void:
 	_write_wav(original, 7)
 	_write_wav(replacement, 8)
 	_check(picker.selected == 0 and panel._action.disabled, "Empty document defaults to full audio")
+	_check(capture_source.selected == 0 and capture_source.disabled, "Capture source defaults to the full mix without an audio file")
 	_check(desk.import_audio(original, false, false), "Import original audio")
 	_check(service.state == "idle" and picker.is_item_disabled(1) and not panel._action.disabled, "Import waits for an explicit separation request")
+	_check(not capture_source.disabled and capture_source.is_item_disabled(1), "Capture lists stems disabled before separation")
 	_check(not is_instance_valid(desk._model_help) or not desk._model_help.visible, "Import leaves model help closed")
 	if not player or service._cache_dir.is_empty():
 		_check(false, "Preview audio player and source cache mounted")
@@ -80,7 +90,11 @@ func _run() -> void:
 		picker.get_popup().about_to_popup.emit()
 		for index in range(1, 5):
 			_check(picker.is_item_disabled(index) == (i < 3), "Only all four valid cached streams unlock listening")
+			_check(capture_source.is_item_disabled(index) == (i < 3), "Only all four valid cached streams unlock capture")
 	_check(service.state == "ready" and picker.selected == 0, "Ready cache retains the full mix")
+	capture_source.item_selected.emit(2)
+	_check(capture_source.selected == 2 and page.options().capture_stem == "drums"
+		and picker.selected == 0 and chart.monitor_audio_stream == null, "Choosing drums for capture keeps playback on the full mix")
 	desk._play_at(700)
 	await create_timer(0.12).timeout
 	_check(player.playing and player.stream == full, "Timeline plays the original stream")
@@ -91,6 +105,7 @@ func _run() -> void:
 		var expected := AudioStreamWAV.load_from_file(service.stem_path(Cache.STEMS[index - 1]))
 		_check(player.playing and player.stream == chart.monitor_audio_stream and player.stream.data == expected.data, "Timeline plays the selected WAV " + Cache.STEMS[index - 1])
 		_check(absf(player.get_playback_position() - before) < 0.3, "Live track switch keeps playback time")
+		_check(page.options().capture_stem == "drums", "Listening to another stem preserves the capture source")
 	_check(chart.loaded_audio_stream == full and chart.to_export_dict().basic.music == chart.audio_path, "Monitoring leaves the saved source intact")
 	var archive := folder.path_join("chart.zip")
 	_check(chart.export_zip_to(archive), "Export a chart while listening to a stem")
@@ -138,11 +153,14 @@ func _run() -> void:
 	desk.sidebar._on_audio_play_pause()
 	_check(desk.import_audio(replacement, false, false), "Replace imported song")
 	_check(picker.selected == 0 and picker.is_item_disabled(1) and chart.monitor_audio_stream == null and service.state == "idle", "Changing songs clears stem selection and availability")
+	_check(capture_source.selected == 0 and capture_source.is_item_disabled(1) and page.options().capture_stem.is_empty(),
+		"Changing songs resets capture to the full mix")
 	desk._play_at(100)
 	_check(player.stream == chart.loaded_audio_stream and player.stream != full, "The replacement song starts on its own full mix")
 	chart.reset_rt_playback()
 	_check(desk.import_audio(original, false, false), "Reopen original audio")
 	_check(picker.selected == 0 and not picker.is_item_disabled(1), "Reopening a cached song starts on the full mix")
+	_check(capture_source.selected == 0 and not capture_source.is_item_disabled(1), "Reopening a cached song offers stems but starts capture on the full mix")
 	picker.item_selected.emit(2)
 	var song_path: String = ProjectSettings.globalize_path(chart.resolve_audio_path(chart.audio_path))
 	DirAccess.copy_absolute(replacement, song_path)
@@ -155,9 +173,12 @@ func _run() -> void:
 	_check(player.playing and player.stream == chart.loaded_audio_stream and player.stream != replaced, "Reload during full-mix playback switches the actual player to the new recording")
 	chart.reset_rt_playback()
 	picker.item_selected.emit(3)
+	capture_source.item_selected.emit(4)
 	DirAccess.remove_absolute(cache.path_join("other.wav"))
-	picker.get_popup().about_to_popup.emit()
+	capture_source.get_popup().about_to_popup.emit()
 	_check(service.state == "idle" and picker.selected == 0 and picker.is_item_disabled(1) and chart.monitor_audio_stream == null, "An incomplete cache falls back to the full mix")
+	_check(capture_source.selected == 0 and capture_source.is_item_disabled(4),
+		"Opening the capture menu refreshes stem availability and resets a missing stem")
 	Cache.remove_work_directory(cache)
 	if "--native" in OS.get_cmdline_user_args():
 		await _check_separation_actions(desk, folder)

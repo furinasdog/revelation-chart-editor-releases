@@ -1,11 +1,15 @@
 extends ScrollContainer
 
 const CaptureCatalog := preload("res://desktop/capture_catalog.gd")
+const StemCache := preload("res://desktop/stem_cache.gd")
+const SOURCE_LABELS := ["完整音频", "人声分轨", "鼓组分轨", "贝斯分轨", "其他伴奏"]
 
 signal run_requested()
 signal selection_changed()
+signal source_menu_opened()
 
 var selected_id := "beat"
+var selected_stem := ""
 var last_capture_source := ""
 var showing_capture_lines := true
 var _choices := {}
@@ -14,6 +18,7 @@ var _run: Button
 var _sensitivity: HSlider
 var _percentage: Label
 var _summary: Label
+var _source: OptionButton
 var _prefs: Node
 var _chart: Node
 
@@ -79,6 +84,23 @@ func setup(preferences: Node, chart: Node, stem_monitor: Control) -> void:
 	_summary = Label.new()
 	_summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	content.add_child(_summary)
+	var source_row := HBoxContainer.new()
+	content.add_child(source_row)
+	var source_label := Label.new()
+	source_label.text = "采音源"
+	source_row.add_child(source_label)
+	_source = OptionButton.new()
+	_source.accessibility_name = source_label.text
+	_source.tooltip_text = "选择用于采音的音轨。分轨完成后可选择各分轨。"
+	_source.size_flags_horizontal = SIZE_EXPAND_FILL
+	_source.fit_to_longest_item = false
+	_source.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	for source_name: String in SOURCE_LABELS:
+		_source.add_item(source_name)
+	_source.item_selected.connect(_select_source)
+	_source.get_popup().about_to_popup.connect(source_menu_opened.emit)
+	source_row.add_child(_source)
+	set_stems_ready(false)
 	_run = Button.new()
 	_run.pressed.connect(run_requested.emit)
 	content.add_child(_run)
@@ -93,6 +115,25 @@ func select(id: String) -> void:
 		selected_id = id
 		selection_changed.emit()
 
+func set_stems_ready(ready: bool) -> void:
+	for index in range(1, _source.item_count):
+		_source.set_item_disabled(index, not ready)
+	if not ready:
+		reset_source()
+
+func reset_source() -> void:
+	_source.select(0)
+	selected_stem = ""
+
+func _select_source(index: int) -> void:
+	if _source.disabled or index < 0 or index >= _source.item_count or _source.is_item_disabled(index):
+		return
+	var stem: String = StemCache.STEMS[index - 1] if index > 0 else ""
+	if stem != selected_stem:
+		_source.select(index)
+		selected_stem = stem
+		selection_changed.emit()
+
 func _on_sensitivity_changed(value: float) -> void:
 	_percentage.text = "%d%%" % roundi(value)
 	_prefs.analysis_options["sensitivity"] = roundi(value)
@@ -101,6 +142,7 @@ func _on_sensitivity_changed(value: float) -> void:
 func options() -> Dictionary:
 	var request := CaptureCatalog.options(selected_id, roundi(_sensitivity.value))
 	request["madmom_model_cache"] = _prefs.analysis_options.get("madmom_model_cache", "")
+	request["capture_stem"] = selected_stem
 	return request
 
 func update_status(has_audio: bool, busy: bool, cache_status: Dictionary, applied_id: String, active_capture_id := "") -> void:
@@ -119,6 +161,7 @@ func update_status(has_audio: bool, busy: bool, cache_status: Dictionary, applie
 		_states[id].text = state
 	var task: String = CaptureCatalog.ENTRIES[selected_id].task
 	_sensitivity.editable = has_audio and not busy and task != "tempo"
+	_source.disabled = not has_audio or busy
 	_run.text = "采音中…" if busy and selected_id == active_capture_id else ("应用" if cached else "采音")
 	_run.disabled = not has_audio or busy
 	if not has_audio:

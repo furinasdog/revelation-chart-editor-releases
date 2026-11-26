@@ -207,6 +207,8 @@ func _analyze_rhythm(audio_path: String, preferred_ffmpeg: String, options: Dict
 	var results := {}
 	var duration := 0.0
 	var accent_filter := {}
+	var capture_levels: Array[float] = []
+	var level_task: String = tasks[0] if not str(options.get("capture_stem", "")).is_empty() else ""
 	var accent_source := "beats" if engine == "native" else "onsets"
 	for backend: String in plans:
 		var rate := PCM_RATE if backend == "native" else EXTERNAL_RATE
@@ -232,6 +234,8 @@ func _analyze_rhythm(audio_path: String, preferred_ffmpeg: String, options: Dict
 			duration = maxf(duration, count * 1000.0 / rate)
 			if backend == engine and ("accents" in tasks or (not options.has("capture_id") and accent_source in tasks)) and not result.has("error"):
 				accent_filter = _measure_accent_filter(pcm_path, rate, accent_source, result.get(accent_source, []))
+			if backend == engine and level_task in ["beats", "downbeats", "onsets"] and result.has(level_task):
+				capture_levels = _capture_levels(pcm_path, rate, result[level_task])
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(pcm_path))
 		results[backend] = result
 	var combined := {"duration_ms": duration, "task_errors": task_errors}
@@ -248,6 +252,8 @@ func _analyze_rhythm(audio_path: String, preferred_ffmpeg: String, options: Dict
 		combined["beat_bpm"] = float(captured.bpm)
 	if not accent_filter.is_empty():
 		combined["accent_filter"] = accent_filter
+	if not capture_levels.is_empty():
+		combined["capture_levels"] = capture_levels
 	if combined.has("accents"):
 		var sensitivity := int(options.get("accent_sensitivity", DEFAULT_ACCENT_SENSITIVITY))
 		combined["accents"] = filter_accents(accent_filter.get("points", []), sensitivity)
@@ -267,6 +273,26 @@ func _analyze_rhythm(audio_path: String, preferred_ffmpeg: String, options: Dict
 	if task_errors.size() == tasks.size():
 		combined["error"] = str(task_errors.values()[0])
 	return combined
+
+static func _capture_levels(pcm_path: String, rate: int, markers: Variant) -> Array[float]:
+	var levels: Array[float] = []
+	var pcm := FileAccess.open(pcm_path, FileAccess.READ)
+	if not pcm:
+		return levels
+	var frame_count := pcm.get_length() >> 2
+	var lead := roundi(rate * 0.01)
+	var trail := roundi(rate * 0.045)
+	for time: float in markers:
+		var center := clampi(roundi(time * rate / 1000.0), 0, frame_count)
+		var start := maxi(0, center - lead)
+		var length := mini(frame_count, center + trail) - start
+		pcm.seek(start * 4)
+		var samples := pcm.get_buffer(length * 4).to_float32_array()
+		var energy := 0.0
+		for sample: float in samples:
+			energy += sample * sample
+		levels.append(sqrt(energy / maxi(1, samples.size())))
+	return levels
 
 func _decode(audio_path: String, ffmpeg: String, pcm_path: String, rate: int) -> String:
 	if rate != MUSIC2EMO_RATE:

@@ -34,7 +34,7 @@ func setup(service: Node, chart: Node, preferences: Node) -> void:
 	sync_audio()
 	_update()
 
-func sync_audio() -> void:
+func sync_audio() -> bool:
 	var path := ""
 	if not _chart.audio_path.is_empty():
 		var resolved: String = _chart.resolve_audio_path(_chart.audio_path)
@@ -44,7 +44,7 @@ func sync_audio() -> void:
 	if _chart.loaded_audio_stream and _chart.loaded_audio_path == path:
 		stream_id = _chart.loaded_audio_stream.get_instance_id()
 	if _source == path and (stream_id == 0 or stream_id == _source_stream_id):
-		return
+		return false
 	var reloaded := _source == path
 	_source = path
 	_source_stream_id = stream_id
@@ -55,6 +55,7 @@ func sync_audio() -> void:
 		_select_track(0)
 	_service.set_audio(path, reloaded)
 	_update()
+	return true
 
 func _run() -> void:
 	if _service.state == "running":

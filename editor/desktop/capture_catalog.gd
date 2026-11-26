@@ -75,6 +75,7 @@ static func applied_result(options: Dictionary, result: Dictionary, previous: Di
 			merged.tempo_anchor_ms = result.tempo_anchor_ms
 	merged["capture_id"] = options.capture_id
 	merged["capture_sensitivity"] = options.sensitivity
+	merged["capture_stem"] = options.get("capture_stem", "")
 	merged["mapping"] = task
 	merged["capture_markers"] = _markers(task, result, options.sensitivity, waveform, bucket_ms)
 	if task == "accents":
@@ -101,7 +102,17 @@ static func _markers(task: String, result: Dictionary, sensitivity: int, wavefor
 	# Beat and onset backends return timestamps without individual confidences.
 	# Use the measured level around each detection to suppress quiet events.
 	var times: Array = Array(result.get(task, []))
-	if times.is_empty() or waveform.is_empty() or threshold <= 0.0:
+	if times.is_empty() or threshold <= 0.0:
+		return times
+	var stem_levels: Array = result.get("capture_levels", [])
+	if stem_levels.size() == times.size():
+		var cutoff := threshold * float(stem_levels.max())
+		var markers := []
+		for i in times.size():
+			if float(stem_levels[i]) >= cutoff:
+				markers.append(times[i])
+		return markers
+	if waveform.is_empty():
 		return times
 	var levels := PackedFloat32Array()
 	var peak := 0.0

@@ -44,8 +44,9 @@ func refresh() -> void:
 		else:
 			_update("idle")
 
-func stem_path(stem: String) -> String:
-	if state != "ready" or stem not in Cache.STEMS:
+func stem_path(stem: String, audio_hash := "") -> String:
+	if (state != "ready" or stem not in Cache.STEMS
+			or (not audio_hash.is_empty() and _audio_hash != audio_hash)):
 		return ""
 	return _cache_dir.path_join(stem + ".wav")
 

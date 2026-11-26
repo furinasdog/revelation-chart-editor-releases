@@ -42,6 +42,7 @@ const BAR := 32.0
 const SECTION := 36.0
 const TIP_BAR_HEIGHT := 36.0
 const GAP := 5.0
+const TIMELINE_TOOLBAR_MARGIN := 8.0
 const PANE := Color("#202734")
 const MUTED := Color("#a9b6c9")
 
@@ -75,7 +76,10 @@ var diagnostics := Diagnostics.new()
 var _last_diagnostic_edit := -1000
 var analysis: Node
 var _audio_cache := AudioCache.new()
+var _stem_fingerprint := preload("res://desktop/audio_fingerprint.gd").new()
+var _capture_stems_ready := false
 var _analysis_audio_id := ""
+var _analysis_capture_input := {}
 var _analysis_dialog: Window
 var _analysis_progress_stage: Label
 var _analysis_progress_meter: ProgressBar
@@ -247,7 +251,6 @@ func attach(editor: Control) -> void:
 	chart.audio_changed.connect(func():
 		_emotion_feedback = ""
 		_file_feedback = ""
-		_analysis_panel.last_capture_source = ""
 		_clear_analysis_feedback()
 		_refresh_audio()
 		_refresh_analysis())
@@ -582,7 +585,9 @@ func _build_inspector() -> void:
 	add_child(_stem_separation)
 	_stem_monitor.setup(_stem_separation, chart, preferences)
 	_stem_separation.model_required.connect(_show_model_help.bind("htdemucs"))
+	_stem_separation.changed.connect(_refresh_capture_sources)
 	models_refreshed.connect(_stem_separation.refresh)
+	_analysis_panel.source_menu_opened.connect(_refresh_capture_source_menu)
 	_analysis_panel.run_requested.connect(_request_analysis)
 	_analysis_panel.selection_changed.connect(_refresh_analysis)
 	sidebar.capture_page_requested.connect(func(target: String):
@@ -1323,7 +1328,8 @@ func _splitter(horizontal: bool, co_pilot := false) -> ColorRect:
 			var width: float = host.size.x - splitter.position.x - event.relative.x
 			preferences.copilot_width = clampf(width / maxf(host.size.x, 1.0), 0.13, 0.57)
 		elif horizontal:
-			preferences.upper_split = clampf((splitter.position.y + event.relative.y - BAR) / maxf(host.size.y - BAR - GAP, 1), 0.36, 0.76)
+			var available := maxf(host.size.y - BAR - GAP - TIMELINE_TOOLBAR_MARGIN, 1)
+			preferences.upper_split = clampf((splitter.position.y + event.relative.y - BAR) / available, 0.36, 0.76)
 		else:
 			preferences.inspector_split = clampf((splitter.position.x + event.relative.x) / maxf(rollout.size.x - GAP, 1), 0.22, 0.66)
 		apply_layout()
@@ -1350,14 +1356,14 @@ func apply_layout() -> void:
 	_copilot_divider.visible = copilot.visible
 	var h := host.size.y
 	var focus: bool = host._layout_mode == "preview_focus"
-	var upper_height := maxf(h - BAR - GAP, 1) * (0.83 if focus else float(preferences.upper_split))
+	var upper_height := maxf(h - BAR - GAP - TIMELINE_TOOLBAR_MARGIN, 1) * (0.83 if focus else float(preferences.upper_split))
 	var inspector_width := maxf(w - GAP, 1) * (0.24 if focus else float(preferences.inspector_split))
 	_inspector_divider.visible = not focus
 	_timeline_divider.visible = not focus
 	var right_x := inspector_width + GAP
 	var right_width := maxf(w - right_x, 0)
 	var divider_y := BAR + upper_height
-	var timeline_y := divider_y + GAP
+	var timeline_y := divider_y + GAP + TIMELINE_TOOLBAR_MARGIN
 	_place(_menu, Rect2(0, 0, full_width, BAR))
 	_place(sidebar, Rect2(0, BAR, inspector_width, upper_height))
 	_place(_inspector_heading, Rect2(0, BAR, inspector_width, SECTION))
@@ -1634,8 +1640,10 @@ func _refresh_audio() -> void:
 			_spectrum_image.texture = null
 			_spectrum_audio = ""
 	if _analysis_panel:
+		if _stem_monitor.sync_audio():
+			_analysis_panel.reset_source()
+			_analysis_panel.last_capture_source = ""
 		_update_capture_panel()
-		_stem_monitor.sync_audio()
 	_refresh_empty()
 
 func _refresh_analysis() -> void:
@@ -2050,58 +2058,99 @@ func _ensure_default_images() -> void:
 
 func _describe_import_analysis() -> void:
 	var item := _requested_audio_analysis()
-	var fingerprint := _audio_cache.fingerprint(chart.resolve_audio_path(chart.audio_path))
-	var cached := _audio_cache.has_task(fingerprint, item.tasks[0], item)
+	var input := _capture_input(item.capture_stem)
+	var cached := _audio_cache.has_task(input.get("id", ""), item.tasks[0], item)
 	_ask.ok_button_text = "应用" if cached else "采音"
 	_ask.dialog_text = "%s「%s」？" % [_ask.ok_button_text, CaptureCatalog.ENTRIES[item.capture_id].label]
 
 func _requested_audio_analysis() -> Dictionary:
 	return _analysis_panel.options()
 
-func _capture_cache_status() -> Dictionary:
+func _capture_input(stem: String, refresh := false) -> Dictionary:
+	var path: String = chart.resolve_audio_path(chart.audio_path) if not chart.audio_path.is_empty() else ""
+	var original_id := _audio_cache.fingerprint(path, refresh)
+	if original_id.is_empty():
+		return {}
+	if stem.is_empty():
+		return {"path": path, "id": original_id, "original_id": original_id}
+	var stem_path := _stem_separation.stem_path(stem, original_id)
+	if stem_path.is_empty():
+		return {}
+	var stem_hash := _stem_fingerprint.read(stem_path, refresh)
+	if stem_hash.is_empty():
+		return {}
+	# Include the separation model, original recording and track identity even when PCM bytes match.
+	var cache_key := stem_path.get_base_dir().get_file()
+	var id := ("%s:%s:%s" % [cache_key, stem, stem_hash]).sha256_text()
+	return {"path": stem_path, "id": id, "original_id": original_id}
+
+func _capture_cache_status(fingerprint: String) -> Dictionary:
 	var hits := {}
-	if chart.audio_path.is_empty():
+	if fingerprint.is_empty():
 		return hits
-	var fingerprint := _audio_cache.fingerprint(chart.resolve_audio_path(chart.audio_path))
 	for id: String in CaptureCatalog.ENTRIES:
 		var item := CaptureCatalog.options(id)
 		hits[id] = _audio_cache.has_task(fingerprint, item.tasks[0], item)
 	return hits
 
+func _refresh_capture_sources() -> void:
+	var ready := _stem_separation.state == "ready"
+	if ready == _capture_stems_ready:
+		return
+	_capture_stems_ready = ready
+	_analysis_panel.set_stems_ready(ready)
+	_update_capture_panel()
+
+func _refresh_capture_source_menu() -> void:
+	var path: String = chart.resolve_audio_path(chart.audio_path) if not chart.audio_path.is_empty() else ""
+	_stem_separation.set_audio(path)
+	_stem_separation.refresh()
+	_update_capture_panel()
+
 func _update_capture_panel() -> void:
+	var stem: String = _analysis_panel.selected_stem
+	var input := _capture_input(stem)
+	var applied_id := ""
+	if str(chart.rhythm_analysis.get("capture_stem", "")) == stem:
+		applied_id = str(chart.rhythm_analysis.get("capture_id", ""))
 	_analysis_panel.showing_capture_lines = sidebar.guide_mode == ReferenceMode.BEATS
-	_analysis_panel.update_status(not chart.audio_path.is_empty(), _analyzing, _capture_cache_status(),
-		str(chart.rhythm_analysis.get("capture_id", "")), str(_analysis_request.get("capture_id", "")) if _analyzing else "")
+	_analysis_panel.update_status(not chart.audio_path.is_empty(), _analyzing, _capture_cache_status(input.get("id", "")),
+		applied_id, str(_analysis_request.get("capture_id", "")) if _analyzing else "")
 
 func _request_analysis() -> void:
 	if _analyzing or chart.audio_path.is_empty():
 		return
 	var options := _requested_audio_analysis()
-	var path: String = chart.resolve_audio_path(chart.audio_path)
-	var id := _audio_cache.fingerprint(path, true)
-	if id.is_empty():
-		_notify("无法读取当前工程的音频。")
+	var input := _capture_input(options.capture_stem, true)
+	if input.is_empty():
+		if not options.capture_stem.is_empty():
+			_stem_separation.set_audio(chart.resolve_audio_path(chart.audio_path), true)
+			_stem_separation.refresh()
+			_update_capture_panel()
+			_notify("无法读取所选分轨，请重新分轨或切换采音音源。")
+		else:
+			_notify("无法读取当前工程的音频。")
 		return
-	var cached := _audio_cache.lookup(id, options)
+	var cached := _audio_cache.lookup(input.id, options)
 	if cached.missing.is_empty():
-		_apply_capture(options, cached, id, true)
+		_apply_capture(options, cached, input.original_id, true)
 		return
 	if options.engine == "madmom" and not ManagedModels.madmom_ready(
 			ManagedModels.directory("madmom", options.get("madmom_model_cache", "")), options.tasks, options.model):
 		_show_model_help("madmom")
 		return
-	_start_analysis(options)
+	_start_analysis(options, input)
 
-func _apply_capture(options: Dictionary, result: Dictionary, fingerprint: String, from_cache := false) -> void:
+func _apply_capture(options: Dictionary, result: Dictionary, original_id: String, from_cache := false) -> void:
 	var task: String = options.tasks[0]
 	var series: String = Analysis.RESULT_KEYS[task]
 	var failure: String = result.get("task_errors", {}).get(task, result.get("error", ""))
 	if not failure.is_empty() or not result.has(series):
 		_show_analysis_feedback("采音失败", failure if not failure.is_empty() else "引擎未返回所选项目。")
 		return
-	var merged := CaptureCatalog.applied_result(options, result, _chart_music_at(fingerprint),
+	var merged := CaptureCatalog.applied_result(options, result, _chart_music_at(original_id),
 		chart.audio_rms_waveform, chart.audio_waveform_bucket_ms)
-	_chart_analysis_id = fingerprint
+	_chart_analysis_id = original_id
 	var bpm := CaptureCatalog.detected_bpm(task, result)
 	if bpm > 0 and (not chart.has_project_bpm or (task == "tempo" and not is_equal_approx(chart.bpm, bpm))):
 		chart.set_bpm(bpm)
@@ -2113,7 +2162,8 @@ func _apply_capture(options: Dictionary, result: Dictionary, fingerprint: String
 		_analysis_details = "工程缺少 BPM，请在「自动采音」选择 BPM 并采音。"
 	_analysis_panel.last_capture_source = "cache" if from_cache else "inference"
 	diagnostics.record("analysis.apply", {"capture_id": options.capture_id, "source": _analysis_panel.last_capture_source,
-		"raw": result[series].size(), "markers": merged.capture_markers.size(), "sensitivity": options.sensitivity})
+		"stem": options.get("capture_stem", ""), "raw": result[series].size(),
+		"markers": merged.capture_markers.size(), "sensitivity": options.sensitivity})
 	chart.set_rhythm_analysis(merged)
 	_refresh_analysis()
 
@@ -2318,7 +2368,7 @@ static func _analysis_targets(tasks: Array) -> String:
 	var captions := {"beats": "拍点", "downbeats": "小节重拍", "tempo": "速度曲线", "onsets": "起音", "accents": "力度重音", "melody": "主旋律", "emotions": "分段情绪"}
 	return "、".join(tasks.map(func(task: String): return captions.get(task, task)))
 
-func _start_analysis(options: Dictionary) -> bool:
+func _start_analysis(options: Dictionary, capture_input := {}) -> bool:
 	_emotion_options(options)
 	var details := {"engine": options.get("engine", "native"), "tempo_engine": options.get("tempo_engine", "native"),
 		"tasks": options.get("tasks", []), "spectrum": options.get("spectrum_only", false),
@@ -2330,8 +2380,9 @@ func _start_analysis(options: Dictionary) -> bool:
 	if chart.audio_path.is_empty():
 		_open_audio_dialog()
 		return false
-	var path: String = chart.resolve_audio_path(chart.audio_path)
-	_analysis_audio_id = _audio_cache.fingerprint(path) if options.has("tasks") else ""
+	var path: String = capture_input.path if not capture_input.is_empty() else chart.resolve_audio_path(chart.audio_path)
+	_analysis_audio_id = capture_input.id if not capture_input.is_empty() else (
+		_audio_cache.fingerprint(path) if options.has("tasks") else "")
 	if not analysis.start(path, preferences.ffmpeg_path, options):
 		diagnostics.record("analysis.start", {"reason": "无法启动分析线程"}, "error")
 		_notify("无法启动音频分析。请重试，或关闭制谱器后重新打开。")
@@ -2341,6 +2392,7 @@ func _start_analysis(options: Dictionary) -> bool:
 		_emotion_feedback = "正在使用 Music2Emo 分析分段情绪…"
 	diagnostics.record("analysis.start", details)
 	_analysis_request = options.duplicate(true)
+	_analysis_capture_input = capture_input
 	_clear_analysis_feedback()
 	_analysis_generation = _document_generation
 	if not options.get("agent_cross_analysis", false) or options.get("visible_progress", false):
@@ -2351,20 +2403,27 @@ func _start_analysis(options: Dictionary) -> bool:
 
 func _on_analysis_complete(path: String, result: Dictionary) -> void:
 	var request := _analysis_request
+	var capture_input := _analysis_capture_input
 	_analysis_request = {}
+	_analysis_capture_input = {}
 	_analyzing = false
 	if is_instance_valid(_analysis_dialog):
 		_analysis_dialog.hide()
 	_refresh_audio()
 	_refresh_analysis()
-	if _analysis_generation != _document_generation or path != chart.resolve_audio_path(chart.audio_path):
+	if _analysis_generation != _document_generation or chart.audio_path.is_empty():
 		diagnostics.record("analysis.discard", {"reason": "音频或工程已切换"}, "warning")
 		return
-	if not _analysis_audio_id.is_empty() and _analysis_audio_id == _audio_cache.fingerprint(path, request.has("capture_id")):
-		_audio_cache.store(_analysis_audio_id, request, result)
-	elif request.has("capture_id"):
-		_notify("采音期间音频文件已更换，请对当前音频重新采音。")
+	if request.has("capture_id"):
+		if capture_input != _capture_input(request.get("capture_stem", ""), true):
+			_notify("采音期间所选音源已更换，请重新采音。")
+			return
+		_audio_cache.store(capture_input.id, request, result)
+	elif path != chart.resolve_audio_path(chart.audio_path):
+		diagnostics.record("analysis.discard", {"reason": "音频或工程已切换"}, "warning")
 		return
+	elif not _analysis_audio_id.is_empty() and _analysis_audio_id == _audio_cache.fingerprint(path):
+		_audio_cache.store(_analysis_audio_id, request, result)
 	var counts := {}
 	for key: String in Analysis.RESULT_KEYS.values():
 		if result.get(key) is Array or result.get(key) is PackedFloat32Array:
@@ -2378,7 +2437,7 @@ func _on_analysis_complete(path: String, result: Dictionary) -> void:
 		_refresh_analysis()
 		return
 	if request.has("capture_id"):
-		_apply_capture(request, result, _analysis_audio_id)
+		_apply_capture(request, result, capture_input.original_id)
 		return
 	if result.get("spectrum_request", false):
 		_apply_spectrum_result(path, result)

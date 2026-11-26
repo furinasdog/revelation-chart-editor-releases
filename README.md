@@ -4,6 +4,10 @@ Windows x64 版本管理器。下载并安装 Hub 后，可在「版本库」选
 
 Hub 使用 C#、WPF 和 .NET 10 LTS。安装器自带运行时。它优先从 GitHub 获取发行包，连接失败时尝试镜像，以发行签名和 SHA-256 校验内容。各编辑器版本独立安装，可离线启动。[Hub 源码及构建说明](更好的制谱器Hub/README.md)
 
+## 制谱器 v1.4.2
+
+「采音／应用」上方可选择完整音频、人声、鼓组、贝斯或其他伴奏。分轨完成后可选择各分轨，试听与采音分别选择，缓存按采音源、内容与模型保存。分轨区与画笔工具栏之间留出间距。已有 v1.4.1 的用户可在 Hub「已安装」中增量更新。[编辑器发行说明](https://github.com/furinasdog/revelation-chart-editor-releases/releases/tag/v1.4.2)
+
 ## Hub v1.5.1 与制谱器 v1.4.1
 
 Co-pilot 默认可发送工程曲绘。模型拒绝图像输入时，助手会保留文字和工具结果，以纯文字重试一次。已连接的 MCP 客户端可直接读取工程曲绘、预览画面和音频图。共享本机音频的绝对路径仍需单独开启。帮助菜单和新手教程已移除「8 拍练习谱」。已有 v1.4.0 编辑器可在 Hub「已安装」中增量升级。[编辑器发行说明](https://github.com/furinasdog/revelation-chart-editor-releases/releases/tag/v1.4.1) · [Hub 发行说明](https://github.com/furinasdog/revelation-chart-editor-releases/releases/tag/hub-v1.5.1)

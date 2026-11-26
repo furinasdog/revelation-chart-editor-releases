@@ -34,6 +34,8 @@ func store(id: String, options: Dictionary, result: Dictionary) -> void:
 		if not result.has(series) or result.get("task_errors", {}).has(task):
 			continue
 		var data := {series: Array(result[series])}
+		if task in ["beats", "downbeats", "onsets"] and result.has("capture_levels"):
+			data["capture_levels"] = result.capture_levels
 		if task == "beats" and result.has("beat_bpm"):
 			data["beat_bpm"] = result.beat_bpm
 		for name: String in ["duration_ms", "tempo_engine", "engine", "tempo_anchor_ms", "accent_filter", "accent_sensitivity"]:
