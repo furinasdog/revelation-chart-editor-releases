@@ -1,6 +1,7 @@
 extends PanelContainer
 
 const DialogLayout := preload("res://desktop/dialog_layout.gd")
+const OfficialAccess := preload("res://desktop/official_access.gd")
 
 signal visibility_requested(enabled: bool)
 signal approval_resolved(approved: bool)
@@ -445,7 +446,7 @@ func prepare_selection(bounds: Vector2) -> void:
 	_editor.select_all()
 
 func _send_prompt(text: String, difficulty := "") -> bool:
-	if not _workspace.features_enabled() or busy or text.is_empty():
+	if busy or text.is_empty() or not OfficialAccess.features_enabled():
 		return false
 	if _span_generation != _workspace._document_generation or not difficulty.is_empty():
 		_selected_span = Vector2(-1,-1)
@@ -522,6 +523,8 @@ func _prepare_draft() -> void:
 	_animation = AnimationDraft.new(chart, _plan.duration_ms, _workspace.automatic.prepare_project_artwork())
 
 func _import_audio(arguments: Dictionary) -> Dictionary:
+	if not OfficialAccess.features_enabled():
+		return {"error": OfficialAccess.LOCKED}
 	var path := AudioImport.local_path(arguments.get("path"))
 	if path.is_empty():
 		return {"error": "请指定本机 WAV、MP3 或 OGG 的绝对路径。"}
@@ -828,6 +831,9 @@ func _resolve_conflict(overwrite: bool) -> void:
 
 func _apply_result(success: bool, message: String, restore_before: Dictionary = {}) -> void:
 	var center_ranges: Array = []
+	if success and not OfficialAccess.features_enabled():
+		success = false
+		message = OfficialAccess.LOCKED
 	if success and _animation.has_assets():
 		var root: String = _workspace._get_or_create_root()
 		if root.is_empty() or _animation.save_assets(root) != OK:

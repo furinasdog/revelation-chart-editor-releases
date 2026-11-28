@@ -1,6 +1,7 @@
 extends Node
 
 const DialogLayout := preload("res://desktop/dialog_layout.gd")
+const OfficialAccess := preload("res://desktop/official_access.gd")
 
 const Server := preload("res://desktop/mcp_server.gd")
 const Catalog := preload("res://desktop/mcp_catalog.gd")
@@ -110,7 +111,7 @@ func _add_row(body: VBoxContainer, caption: String, entry: Control) -> void:
 	body.add_child(row)
 
 func _toggle_server() -> void:
-	if not _workspace.features_enabled():
+	if not _server.is_running() and not OfficialAccess.features_enabled():
 		return
 	if _server.is_running():
 		_server.stop()
@@ -168,7 +169,7 @@ func _copy_config() -> void:
 	_status.text = "已复制连接配置（含令牌）\n" + _server.endpoint()
 
 func _setup_client() -> void:
-	if not _workspace.features_enabled():
+	if not OfficialAccess.features_enabled():
 		return
 	if not _server.is_running():
 		_toggle_server()
@@ -203,8 +204,8 @@ func _setup_client() -> void:
 	DialogLayout.present(_connection_dialog, Vector2i(680, 220))
 
 func _dispatch_tool(id: String, client: String, name: String, arguments: Dictionary, live: Callable) -> Dictionary:
-	if not _workspace.features_enabled():
-		return _format_result({"error": "请联系原作者解锁 Agent。"})
+	if not OfficialAccess.features_enabled():
+		return _format_result({"error": OfficialAccess.LOCKED})
 	if not _tools.any(func(tool: Dictionary): return tool.name == name):
 		return _format_result({"error": "未知制谱工具。"})
 	if name == "get_editor_help":
@@ -416,7 +417,7 @@ func _apply_draft(draft: Dictionary, client: String, summary: String, live: Call
 	return {"finished": summary, "applied": true}
 
 func _approve_request(title: String, text: String, allow: String, deny: String, live: Callable) -> bool:
-	if not live.call():
+	if not live.call() or not OfficialAccess.features_enabled():
 		return false
 	if not is_instance_valid(_approval):
 		_approval = ConfirmationDialog.new()
@@ -435,7 +436,7 @@ func _approve_request(title: String, text: String, allow: String, deny: String, 
 	while _approval.visible and not _approved and live.call():
 		await get_tree().create_timer(0.12).timeout
 	_approval.hide()
-	return _approved and live.call()
+	return _approved and live.call() and OfficialAccess.features_enabled()
 
 static func _client_caption(client: String) -> String:
 	return client.replace("\n", " ").replace("\r", " ")

@@ -66,7 +66,9 @@ internal partial class Program
                 if (!string.IsNullOrEmpty(receipt))
                 {
                     Directory.CreateDirectory(profile.Root);
-                    File.Copy(receipt, Path.Combine(profile.Root, "official_access.json"));
+                    File.Copy(receipt, Path.Combine(profile.Root, EditorFeatureAccess.AgreementReceipt));
+                    File.Copy(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(receipt)), EditorFeatureAccess.UnlockReceipt),
+                        Path.Combine(profile.Root, EditorFeatureAccess.UnlockReceipt));
                     Check(EditorFeatureAccess.Enabled(profile.Root), "The supplied editor receipt unlocks the Hub configuration");
                 }
                 var theme=EditorProfile.Fields.Single(f=>f.Key=="theme");

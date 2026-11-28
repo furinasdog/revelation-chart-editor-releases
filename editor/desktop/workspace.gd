@@ -60,7 +60,6 @@ const BRUSH_TIPS := {
 }
 
 var host: Control
-var access := OfficialAccess.new()
 var chart: Node
 var sidebar: Control
 var preview: Control
@@ -303,14 +302,14 @@ func attach(editor: Control) -> void:
 		_begin_official_use.call_deferred()
 
 func features_enabled() -> bool:
-	return access.features_enabled()
+	return OfficialAccess.features_enabled()
 
 func _begin_official_use() -> void:
-	if not access.has_agreed():
+	if not OfficialAccess.has_agreed():
 		if not await _confirm_user_agreement("同意并继续", "退出"):
 			get_tree().quit()
 			return
-		if not access.accept_agreement():
+		if not OfficialAccess.accept_agreement():
 			OS.alert("无法保存协议确认。请检查本机用户目录的写入权限。", "更好的制谱器")
 			get_tree().quit(1)
 			return
@@ -321,16 +320,17 @@ func _begin_official_use() -> void:
 		_play_startup_sound()
 
 func _confirm_user_agreement(confirm: String, decline: String) -> bool:
-	if access.agreement_text.is_empty():
+	var terms := OfficialAccess.agreement_text()
+	if terms.is_empty():
 		return false
 	var dialog := UserAgreement.new()
 	dialog.theme = _ui_theme
 	host.add_child(dialog)
-	dialog.present(access.agreement_text, confirm, decline)
+	dialog.present(terms, confirm, decline)
 	return await dialog.decided
 
 func _open_unlock() -> void:
-	if not access.has_agreed():
+	if not OfficialAccess.has_agreed():
 		return
 	if not is_instance_valid(_unlock_dialog):
 		_unlock_dialog = AcceptDialog.new()
@@ -346,7 +346,7 @@ func _open_unlock() -> void:
 		hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		body.add_child(hint)
 		var code := LineEdit.new()
-		code.max_length = 530
+		code.max_length = OfficialAccess.CODE_LENGTH
 		code.placeholder_text = "粘贴解锁码"
 		body.add_child(code)
 		var status := _label("已解锁。" if features_enabled() else "")
@@ -355,7 +355,7 @@ func _open_unlock() -> void:
 		body.add_child(actions)
 		actions.add_child(_button("复制机器码…", _copy_unlock_machine_code.bind(status)))
 		actions.add_child(_button("验证并解锁", func():
-			var error := access.install_code(code.text)
+			var error := OfficialAccess.install_code(code.text)
 			status.text = error if not error.is_empty() else "已解锁。"
 			if error.is_empty():
 				code.clear()
@@ -366,11 +366,12 @@ func _open_unlock() -> void:
 func _copy_unlock_machine_code(status: Label) -> void:
 	_unlock_dialog.hide()
 	var accepted := await _confirm_user_agreement("同意并复制机器码", "取消")
-	if accepted and access.has_agreed():
-		if access._machine_code.is_empty():
+	if accepted and OfficialAccess.has_agreed():
+		var machine := OfficialAccess.machine_code()
+		if machine.is_empty():
 			status.text = "无法读取本机标识。"
 		else:
-			DisplayServer.clipboard_set(access._machine_code)
+			DisplayServer.clipboard_set(machine)
 			status.text = "机器码已复制。请通过原作者的联系方式发送。"
 	_open_unlock()
 
@@ -2276,6 +2277,8 @@ func _request_analysis() -> void:
 	_start_analysis(options, input)
 
 func _apply_capture(options: Dictionary, result: Dictionary, original_id: String, from_cache := false) -> void:
+	if not OfficialAccess.features_enabled():
+		return
 	var task: String = options.tasks[0]
 	var series: String = Analysis.RESULT_KEYS[task]
 	var failure: String = result.get("task_errors", {}).get(task, result.get("error", ""))
@@ -2397,8 +2400,8 @@ func _request_spectrum() -> void:
 	_start_analysis({"spectrum_only": true})
 
 func _analyze_for_agent(options: Dictionary) -> Dictionary:
-	if not features_enabled():
-		return {"error": "请联系原作者解锁 Agent 和自动采音。"}
+	if not OfficialAccess.features_enabled():
+		return {"error": OfficialAccess.LOCKED}
 	options = options.duplicate()
 	_emotion_options(options)
 	if options.get("engine") == "madmom":
@@ -2435,6 +2438,8 @@ func _analyze_for_agent(options: Dictionary) -> Dictionary:
 	if not _start_analysis(request, input):
 		return {"error": "未能启动本地分析。"}
 	var finished: Array = await analysis.completed
+	if not OfficialAccess.features_enabled():
+		return {"error": OfficialAccess.LOCKED}
 	if generation != _document_generation or finished[0] != input.path or input != _capture_input(stem):
 		return {"error": "分析期间采音源或工程已更换。"}
 	result.merge(finished[1], true)
@@ -2476,6 +2481,8 @@ func _capture_agent_spectrum(span: Vector2i) -> Dictionary:
 	if not _start_analysis({"spectrum_only": true, "figure_span": audio_span, "agent_cross_analysis": true}):
 		return {"error": "当前无法启动频谱分析。"}
 	var finished: Array = await analysis.completed
+	if not OfficialAccess.features_enabled():
+		return {"error": OfficialAccess.LOCKED}
 	if generation != _document_generation:
 		return {"error": "分析期间音频或工程已切换。"}
 	var result: Dictionary = finished[1]
@@ -2516,8 +2523,7 @@ static func _analysis_targets(tasks: Array) -> String:
 	return "、".join(tasks.map(func(task: String): return captions.get(task, task)))
 
 func _start_analysis(options: Dictionary, capture_input := {}) -> bool:
-	if not features_enabled() and (options.has("capture_id") or options.get("agent_cross_analysis", false)
-			or options.get("tasks", []).any(func(task: String): return task != "emotions")):
+	if Analysis.requires_unlock(options) and not OfficialAccess.features_enabled():
 		return false
 	_emotion_options(options)
 	var details := {"engine": options.get("engine", "native"), "tempo_engine": options.get("tempo_engine", "native"),
@@ -2561,6 +2567,8 @@ func _on_analysis_complete(path: String, result: Dictionary) -> void:
 		_analysis_dialog.hide()
 	_refresh_audio()
 	_refresh_analysis()
+	if Analysis.requires_unlock(request) and not OfficialAccess.features_enabled():
+		return
 	if _analysis_generation != _document_generation or chart.audio_path.is_empty():
 		diagnostics.record("analysis.discard", {"reason": "音频或工程已切换"}, "warning")
 		return

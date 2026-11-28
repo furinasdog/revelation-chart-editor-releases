@@ -1,5 +1,7 @@
 extends Node
 
+const OfficialAccess := preload("res://desktop/official_access.gd")
+
 signal action_started(name: String, arguments: Dictionary)
 signal action_finished(name: String, arguments: Dictionary, accepted: bool)
 signal action_detail(message: String)
@@ -271,6 +273,9 @@ func retry_request() -> void:
 
 func _send(retry := false, expected_run := -1) -> void:
 	if not _active or (expected_run >= 0 and expected_run != _run_id):
+		return
+	if not OfficialAccess.features_enabled():
+		_finish(false, OfficialAccess.LOCKED)
 		return
 	if not retry:
 		_round += 1

@@ -5,6 +5,7 @@ signal progress(stage: String, completed_windows: int, total_windows: int)
 
 const ManagedModels := preload("res://desktop/managed_models.gd")
 const NativeAudioTools := preload("res://desktop/native_audio_tools.gd")
+const OfficialAccess := preload("res://desktop/official_access.gd")
 const MODEL := "res://models/beat-this-final0.onnx"
 const COEFFICIENTS := "res://models/beat-this-frontend.bin"
 const PCM_RATE := 22050
@@ -30,8 +31,16 @@ var _beat_model_loaded := false
 var _progress_file := ""
 var _progress_refresh := 0.0
 var _last_progress := ""
+
+static func requires_unlock(options: Dictionary) -> bool:
+	if options.has("capture_id") or options.get("agent_cross_analysis", false):
+		return true
+	if options.get("tasks") == ["emotions"]:
+		return false
+	return not (options.get("spectrum_only", false) and options.get("tasks", []) == [])
+
 func start(audio_path: String, preferred_ffmpeg: String = "", options: Dictionary = {}) -> bool:
-	if _worker:
+	if _worker or (requires_unlock(options) and not OfficialAccess.features_enabled()):
 		return false
 	_worker = Thread.new()
 	var status := _worker.start(_analyze.bind(audio_path, preferred_ffmpeg, options.duplicate(true)))
@@ -67,6 +76,8 @@ func _exit_tree() -> void:
 		_worker.wait_to_finish()
 
 func _analyze(audio_path: String, preferred_ffmpeg: String, options: Dictionary) -> Array:
+	if requires_unlock(options) and not OfficialAccess.features_enabled():
+		return [audio_path, {"error": OfficialAccess.LOCKED}]
 	return [audio_path, analyze_file(audio_path, preferred_ffmpeg, options)]
 
 func analyze_file(audio_path: String, preferred_ffmpeg: String = "", options: Dictionary = {}) -> Dictionary:

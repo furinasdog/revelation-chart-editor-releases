@@ -2,6 +2,7 @@ extends RefCounted
 
 const Prompts := preload("res://desktop/agent_prompts.gd")
 const Store := preload("res://desktop/project_cache.gd")
+const OfficialAccess := preload("res://desktop/official_access.gd")
 const MEMORY := "user://agent_memory.json"
 const MAX_MEMORIES := 128
 const MAX_NOTE_LENGTH := 600
@@ -76,6 +77,8 @@ static func approval_text(name: String, arguments: Dictionary) -> String:
 			return "将删除这条长期记忆。\n\n%s" % arguments.key
 
 static func call_tool(name: String, arguments: Dictionary) -> Dictionary:
+	if not OfficialAccess.features_enabled():
+		return {"error": OfficialAccess.LOCKED}
 	match name:
 		"list_agent_prompts":
 			var documents := Prompts.snapshot()

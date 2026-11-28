@@ -5,11 +5,12 @@ const References := preload("res://desktop/reference_library.gd")
 const RenderPreview := preload("res://desktop/render_preview.gd")
 const Video := preload("res://desktop/video_export.gd")
 const Agent := preload("res://desktop/chart_agent.gd")
+const OfficialAccess := preload("res://desktop/official_access.gd")
 
 static func run(workspace: Node, request_file: String, response_file: String) -> void:
 	var request: Variant = JSON.parse_string(FileAccess.get_file_as_string(request_file))
 	var response := {"error": "CLI 请求无效。"}
-	if not workspace.access.has_agreed():
+	if not OfficialAccess.has_agreed():
 		response = {"error": "请先打开制谱器并同意用户使用协议。"}
 	elif request is Dictionary:
 		response = await _execute(workspace, request)

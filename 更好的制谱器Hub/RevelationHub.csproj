@@ -7,7 +7,7 @@
     <AssemblyName>RevelationHub</AssemblyName>
     <RootNamespace>RevelationHub</RootNamespace>
     <ApplicationIcon>assets/Revelation.ico</ApplicationIcon>
-    <Version>1.6.0</Version>
+    <Version>1.6.1</Version>
     <AssemblyTitle>更好的制谱器Hub</AssemblyTitle>
     <Product>更好的制谱器Hub</Product>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
@@ -28,7 +28,7 @@
     <HubData Include="../editor/models/model-files.json" LogicalName="RevelationHub.assets.model-files.json" />
     <HubData Include="../editor/licenses/USER-AGREEMENT.txt" LogicalName="RevelationHub.license.user" />
     <HubData Include="../LICENSE" LogicalName="RevelationHub.license.gpl" />
-    <HubData Include="../editor/licenses/FEATURE-UNLOCK-PUBLIC.txt" LogicalName="RevelationHub.license.feature-public-key" />
+    <HubData Include="../editor/licenses/FEATURE-UNLOCK-V2-PUBLIC.txt" LogicalName="RevelationHub.license.feature-public-key" />
     <HubData Include="guides/*.md" LogicalName="RevelationHub.guides.%(Filename)%(Extension)" />
     <EmbeddedResource Include="@(HubData)" Condition="'$(ProtectHub)' != 'true'" />
   </ItemGroup>
