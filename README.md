@@ -4,6 +4,10 @@ Windows x64 版本管理器。下载并安装 Hub 后，可在「版本库」选
 
 Hub 使用 C#、WPF 和 .NET 10 LTS。安装器自带运行时。它优先从 GitHub 获取发行包，连接失败时尝试镜像，以发行签名和 SHA-256 校验内容。各编辑器版本独立安装，可离线启动。[Hub 源码及构建说明](更好的制谱器Hub/README.md)
 
+## 制谱器 v1.4.3
+
+在「参考线量化」选择「传统参考线」后，可在下方填写「手动 BPM」，点击「应用」或按回车将速度写入当前谱面。已有 v1.4.2 的用户可在 Hub「已安装」中增量更新。[编辑器发行说明](https://github.com/furinasdog/revelation-chart-editor-releases/releases/tag/v1.4.3)
+
 ## 制谱器 v1.4.2
 
 「采音／应用」上方可选择完整音频、人声、鼓组、贝斯或其他伴奏。分轨完成后可选择各分轨，试听与采音分别选择，缓存按采音源、内容与模型保存。分轨区与画笔工具栏之间留出间距。已有 v1.4.1 的用户可在 Hub「已安装」中增量更新。[编辑器发行说明](https://github.com/furinasdog/revelation-chart-editor-releases/releases/tag/v1.4.2)

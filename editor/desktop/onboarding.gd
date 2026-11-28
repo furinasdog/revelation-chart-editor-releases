@@ -354,7 +354,7 @@ func _beginner_steps() -> Array[Dictionary]:
 			"节拍采音取得速度时会自动填入空缺的工程 BPM。若 BPM 仍为空，在「自动采音」单选 BPM 项，再点底部「采音」或「应用」。",
 			_workspace._analysis_panel, "选择 BPM", _select_capture.bind("tempo")),
 		_step("传统参考线",
-			"到「参考线量化」选择「传统参考线」。网格按「谱面信息」中的 BPM、变速节点和拍内细分显示。打开卷帘上沿的「时间吸附」后可沿网格放键。",
+			"到「参考线量化」选择「传统参考线」。填写手动 BPM 并点「应用」即可更新谱面速度。网格也会使用工程的变速节点和拍内细分。打开卷帘上沿的「时间吸附」后可沿网格放键。",
 			_workspace._mode_choice, "显示传统参考线", _show_reference.bind(Chart.ReferenceMode.TRADITIONAL)),
 		_step("自动采音线",
 			"在同一页切换为「自动采音线」，对照刚才已应用的节拍放键。想换一组标记时，返回「自动采音」选另一行，再点「采音」或「应用」。",
