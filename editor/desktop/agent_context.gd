@@ -2,6 +2,8 @@ extends RefCounted
 
 const Analysis := preload("res://desktop/analysis.gd")
 const Audio := preload("res://desktop/agent_audio.gd")
+const CaptureCatalog := preload("res://desktop/capture_catalog.gd")
+const ProfileTools := preload("res://desktop/agent_profile_tools.gd")
 const TOOLS := {
 	"locate_notes": ["按标尺定位音符", "{seconds?,ruler_beat?,radius_ms?,offset?,limit?}", "Find editable draft IDs at a displayed chart time or one-based ruler beat. 0:12.0 or 12s → seconds:12. Both coordinates cross-check the labels. Omit both for the playhead. Includes chords and intersecting hold bars, signed hit offsets, selection and positions. Default radius 250ms. An outside neighbor is informational."],
 	"get_project_context": ["读取工程上下文", "{}", "Duration, offset, lead-in limits and available analysis."],
@@ -11,7 +13,8 @@ const TOOLS := {
 	"view_audio_figure": ["查看选段音频图", "{kind:'spectrum'|'waveform',from_ms,to_ms}", "View the selected section as a spectrum or amplitude waveform image. Omit times to use the editor selection. At most 45 seconds per image. Read the image before finishing."],
 	"get_sustain_candidates": ["查找适合长键的持续音", "{from_ms,to_ms,minimum_ms,offset,limit}", "Find stable-pitch stretches from native melody analysis. Times are estimates. Compare against measured phrase timing before writing a hold. minimum_ms: 500–4000."],
 	"get_emotions": ["读取分段情绪", "{from_ms,to_ms,offset,limit}", "Read Music2Emo's existing overlapping segments, ranked mood tags, valence and arousal (1–9), in chart time. This is a model prediction for the music."],
-	"analyze_audio": ["本地交叉分析音频", "{engine,tasks,from_ms,to_ms,offset,limit,use_for_draft}", "Run native (Beat This!), essentia, music2emo (emotions), or rmvpe (vocal_pitch) locally. Rhythm and melody tasks: beats, downbeats, tempo, onsets, accents, melody as supported. Empty draft series are filled automatically. use_for_draft=true also replaces draft series. Editor references stay unchanged. At most three new analyses per turn; cached results may be read again."],
+	"analyze_audio": ["本地自动采音", "{capture_id?,engine?,model?,tasks?,stem?,sensitivity?,from_ms?,to_ms?,offset?,limit?,use_for_draft?}",
+		"Select a UI capture_id or provide engine and tasks. Engines: native, madmom, essentia, music2emo, rmvpe. Essentia supports multifeature or degara for beats/tempo. madmom uses default (CNN onsets) or recurrent for onsets/accents. stem: mix (default), vocals, drums, bass, or other. Stems must be separated in the editor first. sensitivity: 0–100 for a single UI capture. Time bounds filter returned chart-time results; analysis reads the whole selected source. use_for_draft=true replaces existing draft series. Editor guides stay unchanged. Three new analyses per turn; cache reads are unrestricted."],
 	"get_chart_statistics": ["检查音符分布", "{from_ms,to_ms,window_ms,offset,limit}", "Read per-window counts, lanes, density and hold length. Holds are counted in the window containing their judgement."],
 	"list_chart_events": ["读取谱面事件", "{from_ms,to_ms,offset,limit}", "Read timing and types of existing text, image and animation events."],
 	"list_note_paths": ["读取音符移动路径", "{from_ms,to_ms,offset,limit}", "Read draft geometry and the original movement keyframes. Recent edits are flagged. Limit 16 notes per call."],
@@ -48,7 +51,7 @@ const TOOLS := {
 const ANIMATION_TOOLS := ["update_animation_layer", "check_cover_contrast", "list_artwork", "set_project_artwork",
 	"set_artwork_cue", "create_shape_asset", "list_shape_assets", "view_shape_asset"]
 
-static func describe(animation: bool, edit_notes: bool, reanalyze: bool, audio_images := false, scripts := true) -> Dictionary:
+static func describe(animation: bool, edit_notes: bool, reanalyze: bool, audio_images := false, scripts := true, profile_writes := false) -> Dictionary:
 	var available := {}
 	for name: String in TOOLS:
 		if ((name in ANIMATION_TOOLS and not animation)
@@ -57,6 +60,11 @@ static func describe(animation: bool, edit_notes: bool, reanalyze: bool, audio_i
 				or (name in ["view_audio_figure", "view_shape_asset", "view_reference_artwork", "view_reference_frame"] and not audio_images)):
 			continue
 		available[name] = {"arguments": TOOLS[name][1], "description": TOOLS[name][2]}
+		if name == "analyze_audio":
+			available[name]["capture_presets"] = CaptureCatalog.ENTRIES
+	for name: String in ProfileTools.TOOLS:
+		if profile_writes or name not in ProfileTools.WRITES:
+			available[name] = {"arguments": ProfileTools.TOOLS[name][1], "description": ProfileTools.TOOLS[name][2]}
 	return available
 
 static func location_summary(report: Dictionary) -> String:
@@ -92,12 +100,14 @@ static func project(chart: Node, plan: RefCounted, music: Dictionary) -> Diction
 	var counts := {}
 	for task: String in Analysis.RESULT_KEYS:
 		counts[task] = music.get(Analysis.RESULT_KEYS[task], []).size()
+	var engines := {}
+	for engine: String in CaptureCatalog.AGENT_ENGINES:
+		engines[engine] = CaptureCatalog.agent_tasks(engine)
 	return {"duration_ms": plan.duration_ms, "audio_offset_ms": roundi(chart.audio_delay_ms), "tracks": plan.track_count,
 		"difficulty": plan.difficulty, "difficulty_limits": plan.profile, "note_count": plan.notes.size(),
 		"selected_note_ids": chart.selected_note_ids.slice(0, 128),
 		"manual_bpm": chart.bpm, "available_results": counts,
-		"analysis_engines": {"native": Analysis.CAPTURE_TASKS.native + ["tempo"],
-			"essentia": Analysis.CAPTURE_TASKS.essentia + ["tempo"], "music2emo": ["emotions"], "rmvpe": ["vocal_pitch"]}}
+		"analysis_engines": engines}
 
 static func reference_grid(chart: Node, segments: Array = []) -> Array:
 	var rows := []

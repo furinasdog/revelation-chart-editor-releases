@@ -22,12 +22,17 @@ public sealed partial class Distribution
     private string Transaction => Path.Combine(Root, "maintenance");
     private static readonly StringComparer FileNames = StringComparer.OrdinalIgnoreCase;
     private static bool Linked(string path) => (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0;
-    private static bool ValidSlot(string name) => Regex.IsMatch(name ?? "", @"^\d{1,5}\.\d{1,5}\.\d{1,5}(-[a-f0-9]{32})?$");
+    private static bool ValidSlot(string name) => ValidVersion(name) ||
+        (name?.Length > 33 && Regex.IsMatch(name[^33..], @"\A-[a-f0-9]{32}\z") && ValidVersion(name[..^33]));
     private static string SlotVersion(string path)
     {
         if (!ValidSlot(Path.GetFileName(path)) || Linked(path)) return null;
         var marker = Path.Combine(path, Receipt);
-        if (!File.Exists(marker)) return Path.GetFileName(path);
+        if (!File.Exists(marker))
+        {
+            string name = Path.GetFileName(path);
+            return ValidVersion(name) ? name : null;
+        }
         if (Linked(marker) || new FileInfo(marker).Length > 64) return null;
         return File.ReadAllText(marker).Trim();
     }
@@ -90,7 +95,10 @@ public sealed partial class Distribution
             foreach (var f in x.files)
                 if (f == null || !Digest(f.sha256) || f.size < 0 || !f.path.StartsWith(Editor + "/",StringComparison.Ordinal) ||
                     f.path.Split('/').Any(p => p.Length == 0 || p is "." or ".." || p.TrimEnd(' ','.') != p || p.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0) || !names.Add(f.path)) throw new InvalidDataException("文件清单包含无效项目。");
-            if (x.files.Sum(f=>f.size)>MaxUnpacked || x.patches.Any(p=>p==null || !ValidVersion(p.from) || !Digest(p.sha256) || p.size<=0 || p.size>MaxPackage || !Regex.IsMatch(p.tag??"", @"^(hub-)?v\d+\.\d+\.\d+$"))) throw new InvalidDataException("无效的增量更新记录。");
+            if (x.files.Sum(f=>f.size)>MaxUnpacked || (EditorVersion.IsBeta(x.version) && x.patches.Length != 0) ||
+                x.patches.Any(p=>p==null || !ValidVersion(p.from) || EditorVersion.IsBeta(p.from) || !Digest(p.sha256) ||
+                    p.size<=0 || p.size>MaxPackage || !Regex.IsMatch(p.tag??"", @"^(hub-)?v\d+\.\d+\.\d+$")))
+                throw new InvalidDataException("无效的增量更新记录。");
             return x;
         }
         if (!ValidVersion(release.version)) throw new InvalidDataException("版本号无效。");
@@ -132,7 +140,8 @@ public sealed partial class Distribution
         CheckClosed(slot);
         var before=await IndexFor(current,ct).ConfigureAwait(false);
         var after=await IndexFor(target,ct).ConfigureAwait(false);
-        var patch=incremental ? after.patches.FirstOrDefault(p=>p.from==current.version) : null;
+        var patch=incremental && !EditorVersion.IsBeta(current.version) && !EditorVersion.IsBeta(target.version)
+            ? after.patches.FirstOrDefault(p=>p.from==current.version) : null;
         Directory.CreateDirectory(Transaction);
         string next=Path.Combine(Transaction,"next"), zip=Path.Combine(Transaction,"download.zip");
         try

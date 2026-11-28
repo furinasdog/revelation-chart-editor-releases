@@ -1,5 +1,5 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
-  <Package Name="更好的制谱器 Hub" Manufacturer="Revelation Hub" Version="1.5.1" UpgradeCode="D7B58CEC-A20B-4241-AB97-718966748E29" Language="2052" Codepage="936" Scope="perUser" InstallerVersion="500">
+  <Package Name="更好的制谱器 Hub" Manufacturer="Revelation Hub" Version="1.6.0" UpgradeCode="D7B58CEC-A20B-4241-AB97-718966748E29" Language="2052" Codepage="936" Scope="perUser" InstallerVersion="500">
     <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="已安装更高版本的制谱器 Hub。" />
     <MediaTemplate EmbedCab="yes" CompressionLevel="medium" />
     <Icon Id="RevelationHub.ico" SourceFile="$(sys.SOURCEFILEDIR)assets\Revelation.ico"/>

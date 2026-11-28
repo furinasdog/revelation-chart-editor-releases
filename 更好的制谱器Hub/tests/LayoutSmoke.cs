@@ -62,6 +62,13 @@ internal partial class Program
                 var app=new Application{ShutdownMode=ShutdownMode.OnExplicitShutdown,Resources=new HubTheme()};
                 SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher));
                 var profile=new EditorProfile(Path.Combine(work.FullName,"editor"));
+                string receipt = Environment.GetEnvironmentVariable("REVELATION_TEST_EDITOR_RECEIPT");
+                if (!string.IsNullOrEmpty(receipt))
+                {
+                    Directory.CreateDirectory(profile.Root);
+                    File.Copy(receipt, Path.Combine(profile.Root, "official_access.json"));
+                    Check(EditorFeatureAccess.Enabled(profile.Root), "The supplied editor receipt unlocks the Hub configuration");
+                }
                 var theme=EditorProfile.Fields.Single(f=>f.Key=="theme");
                 var modelDir=EditorProfile.Fields.Single(f=>f.Key=="music2emo_models");
                 profile.Config(EditorProfile.Prefs).Save(new(){[theme]="gray",[modelDir]=Path.Combine(profile.Root,"models")});
@@ -186,17 +193,25 @@ internal partial class Program
                     var popup=(System.Windows.Controls.Primitives.Popup)combo.Template.FindName("PART_Popup",combo);
                     Check(combo.ItemContainerGenerator.ContainerFromIndex(0) is ComboBoxItem && popup.Child.RenderSize.Width>=combo.ActualWidth-1,"Theme dropdown opens at field width with selectable values");
                     combo.SelectedValue="dark";combo.IsDropDownOpen=false;
-                    var tabs = Children<TabControl>(w).Single(t=>t.IsVisible);
-                    var mark = (Border)tabs.Template.FindName("SelectionMark",tabs);
-                    tabs.SelectedIndex=1;w.UpdateLayout();Pump(20);
-                    var agentForm=(StackPanel)((TabItem)tabs.SelectedItem).Content;
-                    Check(Grid.GetColumn(mark)==1 && Children<PasswordBox>(agentForm).Any(), "Agent tab selects the matching form");
-                    if (w.AnimateControls)
-                        Check(((TranslateTransform)mark.RenderTransform).X < 0 && agentForm.RenderTransform.Value.IsIdentity && Children<PageCard>(agentForm).First().Opacity < 1,
-                            "The indicator travels while the form sections appear in place");
-                    tabs.SelectedIndex=2;tabs.SelectedIndex=0;Pump(360);
-                    Check(Grid.GetColumn(mark)==0 && ((TranslateTransform)mark.RenderTransform).X==0 && (string)combo.SelectedValue=="dark" && combo.IsVisible,
-                        "Rapid tab switches settle on the last tab and keep the unsaved preference");
+                    if (string.IsNullOrEmpty(receipt))
+                    {
+                        Check(!Children<TabControl>(w).Any(t=>t.IsVisible) && combo.IsVisible,
+                            "Locked editor configuration shows preferences without the Agent and MCP tabs");
+                    }
+                    else
+                    {
+                        var tabs = Children<TabControl>(w).Single(t=>t.IsVisible);
+                        var mark = (Border)tabs.Template.FindName("SelectionMark",tabs);
+                        tabs.SelectedIndex=1;w.UpdateLayout();Pump(20);
+                        var agentForm=(StackPanel)((TabItem)tabs.SelectedItem).Content;
+                        Check(Grid.GetColumn(mark)==1 && Children<PasswordBox>(agentForm).Any(), "Agent tab selects the matching form");
+                        if (w.AnimateControls)
+                            Check(((TranslateTransform)mark.RenderTransform).X < 0 && agentForm.RenderTransform.Value.IsIdentity && Children<PageCard>(agentForm).First().Opacity < 1,
+                                "The indicator travels while the form sections appear in place");
+                        tabs.SelectedIndex=2;tabs.SelectedIndex=0;Pump(360);
+                        Check(Grid.GetColumn(mark)==0 && ((TranslateTransform)mark.RenderTransform).X==0 && (string)combo.SelectedValue=="dark" && combo.IsVisible,
+                            "Rapid tab switches settle on the last tab and keep the unsaved preference");
+                    }
                     var modelLabel=Children<TextBlock>(viewport).First(t=>t.Text=="Music2Emo 模型目录");
                     viewport.ScrollToVerticalOffset(viewport.VerticalOffset+modelLabel.TranslatePoint(new Point(0,modelLabel.ActualHeight/2),viewport).Y-viewport.ActualHeight);
                     Pump(70);

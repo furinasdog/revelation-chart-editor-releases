@@ -34,7 +34,10 @@ func store(id: String, options: Dictionary, result: Dictionary) -> void:
 		if not result.has(series) or result.get("task_errors", {}).has(task):
 			continue
 		var data := {series: Array(result[series])}
-		if task in ["beats", "downbeats", "onsets"] and result.has("capture_levels"):
+		var levels: Variant = result.get("capture_levels_by_task", {}).get(task)
+		if levels is Array:
+			data["capture_levels"] = levels
+		elif options.tasks.size() == 1 and task in ["beats", "downbeats", "onsets"] and result.has("capture_levels"):
 			data["capture_levels"] = result.capture_levels
 		if task == "beats" and result.has("beat_bpm"):
 			data["beat_bpm"] = result.beat_bpm
@@ -93,7 +96,9 @@ static func _key(task: String, options: Dictionary) -> String:
 	var model := str(options.get("model", "default")) if selected == engine else "default"
 	if selected == "native":
 		model = "flux" if task == "tempo" and options.get("capture_id") == "tempo" else "default"
-	elif selected == "essentia" and model != "degara":
+	elif selected == "essentia" and (model != "degara" or task not in ["beats", "tempo"]):
 		model = "multifeature"
+	elif selected == "madmom" and task not in ["onsets", "accents"]:
+		model = "default"
 	var sensitivity := int(options.get("accent_sensitivity", Analysis.DEFAULT_ACCENT_SENSITIVITY)) if task == "accents" else 0
 	return "%s:%s:%s:%d" % [task, selected, model, sensitivity]

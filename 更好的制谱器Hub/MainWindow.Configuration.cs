@@ -35,6 +35,12 @@ public partial class MainWindow
     private string ModelCount(string id) => $"{models.Count(id)} / {models.Files(id).Length} 个模型及配套文件";
     private void ConfigPage()
     {
+        if (!EditorFeatureAccess.Enabled(profile.Root))
+        {
+            configFile = EditorProfile.Prefs;
+            Manager.Children.Add(BuildConfigForm(configFile));
+            return;
+        }
         var tabs = new TabControl { Template=(ControlTemplate)FindResource("ConfigTabs"), ItemContainerStyle=(Style)FindResource("ConfigTab") };
         System.Windows.Automation.AutomationProperties.SetName(tabs,"编辑器配置分类");
         foreach(var (file,label) in new[]{(EditorProfile.Prefs,"偏好设置"),(EditorProfile.Agent,"Agent"),(EditorProfile.Mcp,"MCP")})

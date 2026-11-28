@@ -9,7 +9,9 @@ const Agent := preload("res://desktop/chart_agent.gd")
 static func run(workspace: Node, request_file: String, response_file: String) -> void:
 	var request: Variant = JSON.parse_string(FileAccess.get_file_as_string(request_file))
 	var response := {"error": "CLI 请求无效。"}
-	if request is Dictionary:
+	if not workspace.access.has_agreed():
+		response = {"error": "请先打开制谱器并同意用户使用协议。"}
+	elif request is Dictionary:
 		response = await _execute(workspace, request)
 	var file := FileAccess.open(response_file, FileAccess.WRITE)
 	if file:

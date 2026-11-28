@@ -25,6 +25,8 @@ const References := preload("res://desktop/reference_library.gd")
 const ReferenceMedia := preload("res://desktop/reference_media.gd")
 const ScriptJobs := preload("res://desktop/script_jobs.gd")
 const Guidance := preload("res://desktop/editor_guidance.gd")
+const Prompts := preload("res://desktop/agent_prompts.gd")
+const ProfileTools := preload("res://desktop/agent_profile_tools.gd")
 const TRANSIENT_PROVIDER_ERRORS := ["upstream_interrupted", "upstream_busy", "all_upstreams_failed",
 	"concurrency_exceeded", "rate_limited", "upstream_timeout"]
 const Context := preload("res://desktop/agent_context.gd")
@@ -35,57 +37,6 @@ const ToolReply := preload("res://desktop/agent_tool_reply.gd")
 const WRITES := ["add_notes", "move_notes", "resize_holds", "delete_notes", "set_positions", "seed_pattern",
 	"set_note_lead_in", "set_hold_path", "scale_hold_paths", "create_solid_mask", "set_mask_cue", "add_mask_reveal", "add_animation_layer",
 	"update_animation_layer", "remove_animation_layer", "set_project_artwork", "set_artwork_cue", "create_shape_asset"] + ChartEdits.EDIT_TOOLS
-const CHAT_PROMPT := """
-You are in interactive editing mode. Address the user's newest request and retain relevant earlier context. Read current project state freely. Each proposed change goes through the user's approval policy; a separate reviewer or the user decides. Present the smallest useful action, never retry a refused write in the same turn, and treat reads as read-only. A user may prefer advice only. For a question, use reply: {"message":"简明的中文回答"}; it applies no changes. If at least one write succeeded and the user wants to keep it, validate and use finish. The user sees each proposed write; report briefly what was actually changed. If all changes were refused, reply with the outcome. Use small batches when they help the user evaluate one edit. Do not assume that enabling animations means the request needs an animation. Do not request a whole-song change for a local edit. All user-facing replies should be in Chinese.
-For questions about using this editor, call get_editor_help: {"query":"导出"}. Use the returned menu names in Chinese. If you already have what you need and no writes were made, you may answer as ordinary text for immediate streaming. For reply actions place name before arguments and message first within arguments so users can read the answer as it arrives. For music questions read available timing data first. Call analyze_audio for missing results or when a different engine is needed.
-"""
-const FRAME_PROMPT := """
-Visual review tool: view_rendered_frames: {"times_ms":[700,1800,3200]}. Request 1–6 chart times. It renders the current draft in game view; images are ordered left to right, then top to bottom. Inspect the result before finish. For masks compare just before the switch, during the reveal and after closing. Check that the subject is visible and the notes are readable. Request at most one montage per round, then wait for the returned image before continuing or finishing.
-"""
-const HUMAN_CHARTING_PROMPT := """
-Charting practice observed in the human-made references (“风屿” and “Why Is My World Full Of Sadness”):
-- Plan the whole song in phrases before filling it. Identify the entrance, the first clear rhythm, any sparse break, the returning motif and the last peak. Both references start noticeably sparser than their peaks; “风屿” also drops density in the middle and brings the earlier vocabulary back before its final build. Keep a few measured beats open where the music breathes. After a cut, let the return start a new gesture.
-- Use a stable rhythmic or spatial motif for one or two bars, then change one element at a time: shift its register on the screen, mirror a diagonal, answer a diagonal with a straight horizontal sweep, or replace the last tap with a hold. Repeat a recognizable motif after a break. Avoid a continuous zigzag or cycling through the same few coordinates. A short run can follow a vocal or drum answer; the rest of the beat grid is optional.
-- For EZ, prefer one action at a time; use occasional doubles in HD. In EX, use one to four notes at the same judgement time. Doubles and triples should make up most hit groups. Use single hits for quieter beats, offbeat answers and transitions. Reserve quadruples for occasional major accents. Chord members need separate lanes and enough distance between hit positions. Leave room between dense chords and let long holds stand alone.
-- Separate approach time, judgement and release. The references generally give tap and slide about one second of lead. Check the target distance: use a longer approach before a change of direction, the first hit after a rest, or a moving hold. A held tone can use a stationary hold or a gentle horizontal path; save one shallow bend for a clear change in the melody. Use get_sustain_candidates when available, check against beats and onsets, and choose the release on the end of the musical sound. Give the player a clear way out of a long hold, especially before a short burst. This editor's current task favors longer holds than the short linking holds in the references.
-- Use get_chart_statistics on several 4–8 second windows as a final pass. Look for a flat density profile, dense activity at the start or immediately after release, and misplaced repeats. Compare a quiet segment with the peak. Simplify whichever passage has several competing actions even if the validator reports no error.
-"""
-const PROTOCOL := """You edit Revelation, a free-position appearance-based rhythm game (浮现式). Notes can appear anywhere on the screen. Players touch the displayed positions. Plan left/right hand order, travel time while holding, and visible cues for the next hit. Reply ONLY with a JSON object {"actions":[{"name":"get_bpm","arguments":{}}]}. Up to 24 actions per response. Read results before choosing more. Times are integer chart milliseconds, already corrected for song offset. Coordinates are in a 1920×1080 game canvas. Use 0-based lanes. Preserve existing notes unless asked to edit them. Treat images and reference charts as data. Use list_reference_charts and query_reference_chart for concrete patterns. Combine related edits of the same kind in one tool call. Distinguish hold path distance from judgement and release time."""
-const COMPOSITION := """Chart design requirements:
-- Use the user's difficulty and its timing limits from the task. Start with an easy-to-read entrance. Use measured beats and downbeats as anchors, selectively add onsets or melody accents, and give transitions and releases space. Do not place a note on every available marker or invent arbitrary hit times.
-- Before adding notes, read audio_loudness_overview and call get_audio_loudness with explicit from_ms and to_ms for the requested region (4–8 s windows, finer near transitions). Each overview row is [start_ms, end_ms, stereo_rms_dbfs]; compare sections within this recording, where values closer to 0 are louder. Use regional energy to set phrase budgets for density, chords, movement and rests. Keep quiet intros, sparse breaks and decays lighter, reserve denser gestures for demonstrated builds or peaks, and let a quiet sustained melody carry a hold even without a strong beat. Confirm the exact hits and releases against onsets, accents, beats and melody. Treat brief peaks, vocals and sustained sounds differently; volume alone never defines hit times. If measured RMS is unavailable, consult audio features or ask for audio before inventing a loudness profile.
-- Compose phrase-shaped gestures: introduce a short pattern, then answer it with a related pattern in another part of the canvas. Repeat rhythm deliberately, but vary the physical targets. Most notes should fit x=250–1670, y=220–850. Move progressively across adjacent positions instead of alternating distant edges. Follow the difficulty's chord limit and use the recent-note warning to review unintentional repeats. Later phrases can intentionally revisit an earlier location.
-- Mix horizontal and diagonal slides to fit the phrase. One-third horizontal is a suggestion. For a horizontal drag use the same y and a different x at approach and hit. Use diagonals selectively to signal a new phrase or stronger accent. Let holds express sustained sound: look for real phrase tails, pads, long syllables and quieter stretches. Aim for 2–4 measured beats (often 1.2–3 seconds), and occasionally 4–8 beats for a longer sustain when the chart has space. Use a measured beat or the audible release as the end. Avoid filling the held span with competing hits. Leave space after release for the next gesture. The minimum duration is a floor for exceptional accents, not a target. duration_ms is the time actively held after judgement, separate from the visibility lead-in. Use scale_hold_paths for spatial distance and resize_holds for time held.
-- Use get_project_context and get_audio_features to understand the song and pick sections. Use get_emotions for available Music2Emo segments to guide mood, density and animation choices. If needed, request analyze_audio with music2emo and the emotions task. The emotion scores describe the music and do not locate hits. If detection looks inconsistent, compare native engines with analyze_audio; read its results before editing. Compose from section evidence and use direct note tools. Use get_chart_statistics to inspect density and hold phrasing, then refine and run check_conflicts before finish. Adjust flagged positions or timing instead of deleting all notes. Use list_notes or list_note_paths for specific sections when editing by ID."""
-const NOTE_TOOLS := """Tools:
-get_bpm, get_beats, get_melody, estimate_mood: {"from_ms":0,"to_ms":8000,"offset":0,"limit":64}. get_beats may select "kind":"beats"|"downbeats"|"onsets"|"accents". estimate_mood is an acoustic estimate, not a human emotion classification.
-list_notes: same range/paging arguments, returns editable IDs.
-add_notes: {"notes":[{"type":"note"|"drag"|"hold","time_ms":1600,"lane":0,"x":800,"y":450,"duration_ms":2000,"end_x":1050,"end_y":450,"approach_x":550,"approach_y":450}]}. time_ms is judgement. Duration and end coordinates apply to holds. Optional approach coordinates determine a drag's entrance; use the same y for horizontal slides.
-delete_notes: {"ids":[1,2]}. move_notes: {"notes":[{"id":1,"time_ms":900,"lane":2}]}. set_positions: {"notes":[{"id":1,"x":800,"y":450}]} accepts optional end/approach coordinate pairs. resize_holds: {"notes":[{"id":1,"duration_ms":2500}]} changes the release time while keeping the judgement and path. Up to 128 changes per call.
-seed_pattern: {"seed":42,"from_ms":0,"to_ms":-1}. Generates a rhythmic base at the user's difficulty; -1 means through the end. The seed changes phrase shapes, while measured markers and musical phrasing set the timing.
-check_conflicts: {} finds overlaps, excessive chords, uncomfortable jumps and quick holds, and reports new_hit_chords. Use a seeded draft only when the user explicitly requests automated scaffolding. Compare get_chart_statistics over quiet and loud sections and refine density where it misses the audio dynamics before finishing. Inspect individual notes only to repair specific problems or when the user requests changes. Keep seeded chords together. For errors, query only the affected time ranges and use pagination. Finish with finish: {"summary":"Brief Chinese summary"}. A valid finish applies the draft. Avoid editing notes when edit_notes=false. Tool calls are plain JSON without Markdown fences. In Chinese replies and finish summaries you may use headings, lists, emphasis and code spans."""
-
-const ANIMATION_PROMPT := """
-Animation direction:
-- When requires_visible_animation is true, deliver visible motion that follows musical phrases. A dark mask, static image swap, or uniform fade can support contrast, but cannot satisfy the animation request on its own. Add a deliberate moving or scaling graphic, an artwork pan, or an aperture that visibly opens and closes against a mask. For a full song, give the same visual motif distinct treatments at two or more genuine transitions, such as a quiet entrance and a rising section. Consult regional RMS, onsets and section cues to choose where motion starts and ends. Use list_animation_layers and check has_visible_motion before finish. If the frame review tool is available, inspect the same motif before, during and after its change.
-- Before authoring, get_animation_cues {"from_ms":0,"limit":18}. Use the returned phrase anchors and coarse loudness for the intro, section change, accent and release. Use the selected span if the user requested one. Leave quiet passages mostly still; one change per phrase is usually enough. Land major motions on the measured anchor, not an arbitrary offset. A hold between two similar poses is fine.
-- Use solid masks and circular background reveals in the style of the “领主” chart. For full songs, plan two to four coordinated masks with different roles: an opaque or near-opaque dark opening, a tinted translucent mask for a new section, optionally a transparent release. Place them only at meaningful musical changes. Use add_mask_reveal to expand the visible artwork from a focal point and close with the phrase; stagger distinct reveals rather than flashing or flipping colors every beat. Choose muted shades already present in the artwork and reuse assets that match. If the user specifies a short span, scale the number of effects to that span.
-- Design one visual idea for the song, with a recognizable focal point. When the user has supplied artwork, inspect it and set use_cover_artwork=true on a mask cue to place it below the masks, or animate it as a cover layer when the brief calls for camera motion. Keep the subject within frame, preserve the aspect ratio, and prefer a subtle pan or push-in. Favor scale 1.0–1.12, movement of roughly 24–80 px and rotation near 0°. Keep the artwork visible during a meaningful section.
-- When multiple selected images are provided, identify each by its artwork_id. Use all selected artwork across meaningful sections with legible durations. Choose the order based on image content, song structure and the brief. Change backgrounds at phrase or section boundaries, and plan separate mask opacity for each image. Avoid rapid cycling or sending multiple opaque foreground layers over gameplay.
-- Pale artwork can wash out white hit rings, slide markers and thin hold lines. If the artwork looks bright, get_cover reports bright_playfield=true, or rendered frames show weak contrast, put a dark low-saturation mask over the artwork as the bottom image. Start around 0.45–0.65 opacity, adjust for contrast, and avoid large unmasked reveals over dense notes or a hold release. Reserve bright reveals for quieter spans or the edges; review representative busy frames when frame inspection is available. A semi-transparent cover animation above the mask can undo darkening, so use the background mask path for bright artwork.
-- Keep the central play area readable. A mask asset can also be used as a moving band or shutter in a mask layer. Prefer a narrow shape near the edge and low opacity. Avoid multiple overlapping shapes, back-and-forth spins, flashing, and changing position, scale, rotation and opacity at every beat.
-- Use smooth easing for camera movement, out for settling, and linear only for deliberate steady motion. Keep large shifts and opacity changes spread over at least a beat and use 3–7 intentional poses per layer unless the brief needs more. Do not create visual changes during a playable section just to fill time.
-- The human references build scenes with recurring thin lines, outlined rectangles and circular accents. Layer them by function: a steady stage treatment for the current phrase, a brief direction cue from the edge, then a fade. A pair of related cues can enter a half beat or beat apart and lead the eye toward the next phrase. For a busy peak reuse a familiar geometry with a wider or stronger gesture rather than introducing unrelated layers. To reproduce the technique with available tools, use a thin low-opacity mask layer (about 8–24 px for a line) away from judgement positions, and add_mask_reveal for the occasional circle. Prefer preserving legibility over reproducing the references' dense stack of layers.
-- Use check_cover_contrast at the first hit, a dense phrase, during a reveal, and at a long hold's release. If it flags a bright or occluded passage, correct the underlying mask or revise the affected image keyframes with update_animation_layer, then inspect actual frames when allowed. Compare the same time before and after a major adjustment.
-- Use create_shape_asset for transparent outlined squares, rings or line accents, and add_animation_layer with source:shape and its shape_id to animate them. Draw an outline or a small set of related strokes that fit the composition. Thin outlines and fading at phrase boundaries preserve note readability. Use the radius-based mask reveal for unveiling the artwork itself."""
-const ANIMATION_TOOLS := """Animation tools:
-get_animation_cues: {"from_ms":0,"to_ms":12000,"limit":12}. Compact phrase anchors in chart milliseconds with an approximate intensity for each.
-create_solid_mask: {"color":"#111827","opacity":1}. Creates a local solid-color PNG resource in the draft. It returns mask_id. Opacity 0 means transparent, 1 means fully masking the bottom image.
-set_mask_cue: {"mask_id":"<returned ID>","time_ms":0,"artwork_id":"artwork_1"}. Switch the mask and select the specified artwork as the bottom image. Omit artwork_id and use_cover_artwork to keep the bottom image. use_cover_artwork=true is shorthand for the first image. Use an empty mask_id to remove this run's cue at that time.
-add_mask_reveal: {"time_ms":400,"duration_ms":3000,"x":960,"y":540,"radius_px":900}. Expands, briefly holds, then closes a feathered aperture revealing the bottom image. Schedule while a suitably opaque mask is active. It returns a slot, removable by remove_animation_layer.
-list_animation_layers: {}, get_cover: {"artwork_id":"artwork_2"} to inspect one image and list all available artwork. Omit the ID to inspect the first image. remove_animation_layer: {"slot":0} for new draft layers only.
-add_animation_layer: {"source":"cover"|"color"|"mask","artwork_id":"artwork_1","mask_id":"<returned ID>","width":540,"height":120,"color":"teal"|"rose"|"blue"|"amber"|"violet"|"white","keyframes":[{"time_ms":0,"x":932,"y":540,"opacity":0},{"time_ms":1800,"opacity":0.35,"easing":"out"},{"time_ms":5200,"x":980,"scale":1.08,"easing":"smooth"}]}. Use artwork_id for cover layers, one layer per image. The mask_id, width and height apply only to mask layers. Keyframes inherit omitted positions, opacity, scale and rotation. Easing applies to the transition into each frame. The first frame is at 0, subsequent frames are at least 240 ms apart. Confirm and summarize the artistic intent briefly in Chinese.
-"""
 
 var _request: HTTPRequest
 var _stream := ChatStream.new()
@@ -217,20 +168,34 @@ func start(plan: RefCounted, music: Dictionary, moods: Array, settings: Dictiona
 			visual_content.append({"type": "image_url", "image_url": {"url": animation.artwork[id].data_url}})
 		content = visual_content
 	var interactive := _approve.is_valid()
-	var instructions := PROTOCOL + "\n" + NOTE_TOOLS + "\n"
+	var sections := PackedStringArray([
+		Prompts.section("copilot", "protocol"),
+		Prompts.section("copilot", "note-tools"),
+	])
 	if use_cover:
-		instructions += "When artwork images are attached, they follow the order of the project artwork catalog.\n"
+		sections.append(Prompts.section("copilot", "artwork-order"))
 	if interactive:
-		instructions += Guidance.EDITOR
+		sections.append(Guidance.editor())
 	else:
-		instructions += COMPOSITION + HUMAN_CHARTING_PROMPT + "\n" + Guidance.FULL
+		sections.append_array([
+			Prompts.section("composition", "chart-design"),
+			Prompts.section("composition", "reference-charts"),
+			Guidance.full(),
+		])
 	if animation:
-		instructions += "\n" + Guidance.MASKS + "\n" + ANIMATION_TOOLS if interactive else ANIMATION_PROMPT + ANIMATION_TOOLS
-	instructions += FRAME_PROMPT if frame_capture.is_valid() else ""
-	instructions += "\nAdditional editor tools available for this run (argument schemas): " + JSON.stringify(
-		Context.describe(animation != null, edit_notes, reanalyze.is_valid(), _audio_spectrum.is_valid(), not interactive))
+		sections.append(Guidance.masks() if interactive else Prompts.section("composition", "animation-design"))
+		sections.append(Prompts.section("copilot", "animation-tools"))
+	if frame_capture.is_valid():
+		sections.append(Prompts.section("copilot", "preview"))
+	sections.append(Prompts.section("copilot", "profile-tools"))
+	sections.append(Prompts.section("copilot", "tool-schema") + " " + JSON.stringify(
+		Context.describe(animation != null, edit_notes, reanalyze.is_valid(), _audio_spectrum.is_valid(), not interactive, interactive)))
 	if interactive:
-		instructions += CHAT_PROMPT
+		sections.append(Prompts.section("copilot", "interactive"))
+	var instructions := Prompts.join(sections)
+	if instructions.is_empty():
+		_finish(false, "无法加载 Agent 提示词。请检查提示词文件。")
+		return
 	_messages.assign([{"role": "system", "content": instructions}, {"role": "user", "content": content}])
 	_send()
 
@@ -336,8 +301,7 @@ func _request_payload() -> String:
 				"animation_layer_count": _animation.layers.size() if _animation else 0,
 				"mask_cue_count": _animation.mask_cues.size() if _animation else 0}
 			messages[0] = {"role": "system", "content": str(messages[0].content)
-				+ "\nOlder tool exchanges were compacted. Draft changes remain applied locally. "
-				+ "Use editor tools to look up existing details. Current draft: " + JSON.stringify(summary)}
+				+ "\n" + Prompts.section("copilot", "compacted-history") + " " + JSON.stringify(summary)}
 		var request := {"model": _model, "messages": messages, "stream": _using_stream, "max_tokens": 8192}
 		if _using_stream and not _stream_usage_disabled:
 			request["stream_options"] = {"include_usage": true}
@@ -610,7 +574,9 @@ func _execute_actions(actions: Array) -> void:
 			return
 		var response: Dictionary
 		var approved := true
-		if _approve.is_valid() and (name in WRITES or name == "analyze_audio" or (name == "finish" and _review_commit and _chat_has_changes())):
+		var profile_write := name in ProfileTools.WRITES
+		var issue := ProfileTools.approval_issue(name, arguments) if profile_write else ""
+		if _approve.is_valid() and issue.is_empty() and (profile_write or name in WRITES or name == "analyze_audio" or (name == "finish" and _review_commit and _chat_has_changes())):
 			approved = await _approve.call(name, arguments)
 		if not approved:
 			if not _active or run_id != _run_id:
@@ -618,6 +584,11 @@ func _execute_actions(actions: Array) -> void:
 			response = {"error": "用户拒绝了这项修改。请遵循用户的选择。"}
 		elif not _active or run_id != _run_id:
 			return
+		elif profile_write:
+			if not _approve.is_valid():
+				response = {"error": "请在可手动确认的 Agent 对话中修改提示词或记忆。"}
+			else:
+				response = ProfileTools.call_tool(name, arguments) if issue.is_empty() else {"error": issue}
 		elif name == "import_audio":
 			if actions.size() != 1:
 				response = {"error": "请单独请求导入音频，导入后再读取工程或处理草稿。"}
@@ -817,8 +788,10 @@ func _editor_state() -> Dictionary:
 	return state
 
 func _call_tool(name: String, arguments: Dictionary) -> Dictionary:
+	if name in ProfileTools.TOOLS and name not in ProfileTools.WRITES:
+		return ProfileTools.call_tool(name, arguments)
 	if name == "get_editing_guide":
-		return {"instructions": Guidance.EDITOR if _approve.is_valid() else Guidance.FULL}
+		return {"instructions": Guidance.editor() if _approve.is_valid() else Guidance.full()}
 	if not _edit_notes and name in ["add_notes", "move_notes", "resize_holds", "delete_notes", "set_positions", "seed_pattern", "set_note_lead_in", "set_hold_path", "scale_hold_paths"]:
 		return {"error": "本次只制作动画。"}
 	if not _animation and (name in Context.ANIMATION_TOOLS or name in ["get_animation_cues", "list_animation_layers", "get_cover", "add_animation_layer",
@@ -1104,21 +1077,11 @@ func draft_changes() -> Dictionary:
 func _analyze_audio(arguments: Dictionary, run_id: int) -> Dictionary:
 	if not _reanalyze.is_valid():
 		return {"error": "当前没有可分析的音频。"}
-	var engine := str(arguments.get("engine", "native"))
-	var tasks: Variant = arguments.get("tasks")
-	if not engine in ["native", "essentia", "music2emo", "rmvpe"] or not tasks is Array or tasks.is_empty() or tasks.size() > 6:
-		return {"error": "选择 native、essentia、music2emo 或 rmvpe，并提供分析目标。"}
-	var optional := {"music2emo": ["emotions"], "rmvpe": ["vocal_pitch"]}
-	var allowed: Array = optional[engine] if optional.has(engine) else Context.Analysis.CAPTURE_TASKS[engine] + ["tempo"]
-	var selected: Array = []
-	for task: Variant in tasks:
-		if not task is String or task not in allowed:
-			return {"error": "该引擎不支持所选任务。", "available": allowed}
-		if task not in selected:
-			selected.append(task)
-	var options := {"engine": engine, "tempo_engine": engine, "tasks": selected,
-		"cache_only": _analysis_requests >= LOCAL_ANALYSIS_LIMIT,
-		"progress": func(service: String, caption: String): tool_progress.emit(service, caption)}
+	var options := Context.CaptureCatalog.agent_options(arguments)
+	if options.has("error"):
+		return options
+	options["cache_only"] = _analysis_requests >= LOCAL_ANALYSIS_LIMIT
+	options["progress"] = func(service: String, caption: String): tool_progress.emit(service, caption)
 	var raw: Dictionary = await _reanalyze.call(options)
 	if not _active or run_id != _run_id:
 		return {}
@@ -1128,13 +1091,23 @@ func _analyze_audio(arguments: Dictionary, run_id: int) -> Dictionary:
 	var to_ms := _integer(arguments, "to_ms", _plan.duration_ms, from_ms, _plan.duration_ms)
 	var offset := _integer(arguments, "offset", 0, 0, 60000)
 	var limit := _integer(arguments, "limit", 32, 1, 64)
-	var output := {"engine": engine, "task_errors": raw.get("task_errors", {}), "results": {}}
+	var output := {"engine": options.engine, "model": options.model,
+		"stem": "mix" if options.capture_stem.is_empty() else options.capture_stem,
+		"cache_hits": raw.get("cache_hits", []), "task_errors": raw.get("task_errors", {}), "results": {}}
+	var has_preset := options.has("capture_id")
+	if has_preset:
+		output["capture_id"] = options.capture_id
+		output["sensitivity"] = options.sensitivity
+		var bpm := Context.CaptureCatalog.detected_bpm(options.tasks[0], raw)
+		if bpm > 0:
+			output["detected_bpm"] = bpm
 	if raw.has("error"):
 		output["error"] = raw.error
-	for task: String in selected:
+	for task: String in options.tasks:
 		var key: String = Context.Analysis.RESULT_KEYS[task]
 		if raw.has(key):
-			var original := Array(raw[key])
+			var original := Context.CaptureCatalog.filtered_series(options, raw, _chart.audio_rms_waveform,
+				_chart.audio_waveform_bucket_ms) if has_preset else Array(raw[key])
 			var shifted := _shift_analysis_series(original, roundi(_chart.audio_delay_ms))
 			output.results[task] = _emotion_series(shifted, from_ms, to_ms, offset, limit) if task == "emotions" else _series(shifted, from_ms, to_ms, offset, limit)
 			if not shifted.is_empty() and (_music.get(key, []).is_empty() or arguments.get("use_for_draft", false) == true):

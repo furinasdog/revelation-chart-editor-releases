@@ -38,6 +38,8 @@ func apply_theme(theme: Theme) -> void:
 		_settings_dialog.theme = theme
 
 func open_settings() -> void:
+	if not _workspace.features_enabled():
+		return
 	if is_instance_valid(_settings_dialog):
 		_settings_dialog.queue_free()
 	_settings_dialog = _dialog("Agent 设置", "保存设置")
@@ -206,6 +208,8 @@ func _estimate_mood() -> Array:
 func _action_caption(name: String, fallback := "未知动作") -> String:
 	if AgentContext.TOOLS.has(name):
 		return AgentContext.TOOLS[name][0]
+	if Agent.ProfileTools.TOOLS.has(name):
+		return Agent.ProfileTools.TOOLS[name][0]
 	return ACTION_LABELS.get(name, fallback)
 
 func _effective_settings() -> Dictionary:

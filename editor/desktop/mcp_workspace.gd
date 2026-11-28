@@ -88,6 +88,8 @@ func setup(workspace: Node) -> void:
 	_refresh()
 
 func open() -> void:
+	if not _workspace.features_enabled():
+		return
 	_refresh()
 	DialogLayout.present(_dialog, Vector2i(555, 355))
 
@@ -108,6 +110,8 @@ func _add_row(body: VBoxContainer, caption: String, entry: Control) -> void:
 	body.add_child(row)
 
 func _toggle_server() -> void:
+	if not _workspace.features_enabled():
+		return
 	if _server.is_running():
 		_server.stop()
 		_refresh()
@@ -164,6 +168,8 @@ func _copy_config() -> void:
 	_status.text = "已复制连接配置（含令牌）\n" + _server.endpoint()
 
 func _setup_client() -> void:
+	if not _workspace.features_enabled():
+		return
 	if not _server.is_running():
 		_toggle_server()
 	if not _server.is_running():
@@ -197,16 +203,20 @@ func _setup_client() -> void:
 	DialogLayout.present(_connection_dialog, Vector2i(680, 220))
 
 func _dispatch_tool(id: String, client: String, name: String, arguments: Dictionary, live: Callable) -> Dictionary:
+	if not _workspace.features_enabled():
+		return _format_result({"error": "请联系原作者解锁 Agent。"})
 	if not _tools.any(func(tool: Dictionary): return tool.name == name):
 		return _format_result({"error": "未知制谱工具。"})
 	if name == "get_editor_help":
 		return _format_result(_workspace._copilot_help(str(arguments.get("query", "")).left(150)))
 	if name == "get_editing_guide":
-		return _format_result({"instructions": Guidance.FULL})
+		return _format_result({"instructions": Guidance.full()})
 	if name == "get_audio_path":
 		return _format_result(_audio_path())
 	if name == "list_project_artwork":
 		return _format_result(_list_project_artwork(arguments))
+	if name in Agent.ProfileTools.TOOLS:
+		return _format_result(await _profile_tool(id, client, name, arguments, live))
 	if not _active_session.is_empty() or _workspace.copilot.busy or _workspace._video.busy or _workspace._analyzing or _workspace.scripts._active:
 		return _format_result({"error": "编辑器正在处理其他任务，请稍后重试。"})
 	var draft: Dictionary = _drafts.get(id, {})
@@ -242,6 +252,21 @@ func _dispatch_tool(id: String, client: String, name: String, arguments: Diction
 		draft.agent.queue_free()
 	_workspace.diagnostics.record("mcp.tool", {"name": name, "success": not result.has("error")})
 	return _format_result(result)
+
+func _profile_tool(id: String, client: String, name: String, arguments: Dictionary, live: Callable) -> Dictionary:
+	if name in Agent.ProfileTools.WRITES:
+		if not _active_session.is_empty() or _workspace.copilot.busy:
+			return {"error": "编辑器正在处理其他请求，请稍后重试。"}
+		var issue := Agent.ProfileTools.approval_issue(name, arguments)
+		if not issue.is_empty():
+			return {"error": issue}
+		_active_session = id
+		var allowed := await _approve_request(Agent.ProfileTools.TOOLS[name][0],
+			"客户端「%s」\n\n%s" % [_client_caption(client), Agent.ProfileTools.approval_text(name, arguments)], "确认", "拒绝", live)
+		_active_session = ""
+		if not allowed:
+			return {"error": "用户拒绝或客户端取消了修改。"}
+	return Agent.ProfileTools.call_tool(name, arguments)
 
 func _import_audio(id: String, client: String, arguments: Dictionary, live: Callable,
 		generation: int, signature: String) -> Dictionary:

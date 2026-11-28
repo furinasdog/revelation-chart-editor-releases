@@ -127,8 +127,9 @@ func _go() -> void:
 
 func _commands(w: Node) -> Array:
 	var file_menu: MenuButton = w._menu.get_child(0).get_child(0)
-	return [
-		["导入音频", "文件 → 导入音频", "可以拖入音频。导入后的弹窗可调整分析项目或暂不分析。", w._open_audio_dialog, "歌曲 mp3 wav ogg"],
+	var items := [
+		["导入音频", "文件 → 导入音频", "可从文件菜单选择音频，也可以拖入窗口。", w._open_audio_dialog, "歌曲 mp3 wav ogg"],
+		["功能解锁", "工具 → 功能解锁", "再次同意用户使用协议后复制机器码，向原作者申请解锁码。", w._open_unlock, "机器码 授权"],
 		["导入参考谱", "工具 → 导入参考谱", "将本机谱面的制谱与动画数据加入参考谱库，供助手查询。", w.scripts.open_reference_import, "参考 谱面 动画"],
 		["运行脚本", "工具 → 运行 .rpy", "运行可信任的本机制谱脚本。", w.scripts.open_script, "Python rpy 脚本"],
 		["Agent 设置", "工具 → Agent 设置", "填写 API 地址、密钥和模型名称。", w.automatic.open_settings, "API 模型 密钥"],
@@ -165,6 +166,12 @@ func _commands(w: Node) -> Array:
 		["导出错误包", "帮助 → 导出错误包", "将近期编辑操作、报错和运行环境写入 ZIP，便于反馈问题。", w._open_diagnostic_export, "日志 崩溃 诊断 反馈"],
 		["查看新手教程", "帮助 → 首次制谱教程 / 原版迁移引导", "首次制谱教程带你走过导入、放置、播放和导出。迁移引导介绍原版常用功能的新位置。", w._onboarding.open_beginner, "入门 教程 使用 帮助"],
 	]
+	if not w.features_enabled():
+		items = items.filter(func(item: Array): return item[0] not in [
+			"Agent 设置", "一键制谱", "MCP 服务器", "Revelation Co-pilot", "自动采音和力度重音", "分轨试听"])
+		var reference: Array = items.filter(func(item: Array): return item[0] == "参考线和时间吸附")[0]
+		reference[2] = "在「参考线量化」填写手动 BPM，点「应用」更新谱面。时间吸附开关在卷帘上沿。"
+	return items
 
 func _open_preview_menu() -> void:
 	_workspace._results_tabs.current_tab = 0

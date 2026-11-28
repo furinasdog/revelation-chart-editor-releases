@@ -84,8 +84,26 @@ func _check_quick_edit(desktop: Node) -> void:
 	_check(not curve.is_empty() and curve.start.distance_to(curve.end) > 10, "One click makes distinct, draggable slide endpoints")
 	chart.undo()
 	_check(not chart._move_active(chart.notes[id]), "Undo removes the entire new path")
-	desktop._choose_tool(302)
+	var popup: PopupMenu = desktop._event_tools.get_popup()
+	popup.id_pressed.emit(302)
 	_check(chart.current_event_subtype == 2 and "文本事件" in desktop._event_tools.text, "Grouped event tools preserve selection")
+	popup.id_pressed.emit(303)
+	var event_index := popup.get_item_index(303)
+	_check(popup.is_item_checked(event_index) and desktop._event_tools.text == "事件 · 重置累计",
+		"The event menu shows the active Reset Accumulation brush")
+	var default_index := -1
+	for index in range(popup.item_count):
+		if popup.get_item_text(index) == "恢复默认（选择）":
+			default_index = index
+			break
+	_check(default_index >= 0, "The event menu offers a way to restore its default")
+	if default_index < 0:
+		return
+	popup.id_pressed.emit(popup.get_item_id(default_index))
+	_check(chart.current_tool_type == -1 and desktop._tools[-1].button_pressed and desktop._event_tools.text == "事件",
+		"Restoring the default leaves event placement and returns to Selection")
+	_check(popup.is_item_checked(default_index) and not popup.is_item_checked(event_index),
+		"The event menu clears the old event checkmark")
 
 func _exercise_note(desktop: Node, type: int) -> void:
 	var chart: Node = desktop.chart

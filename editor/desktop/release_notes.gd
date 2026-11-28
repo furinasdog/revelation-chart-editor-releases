@@ -1,6 +1,12 @@
 extends RefCounted
 
 const ENTRIES := {
+	"v1.5.0-beta.1": [
+		"重新设计桌面工作区。检查器、预览和卷帘工具区采用紧凑的面板层级，页签选中线和可编辑数值使用蓝色。",
+		"「键设置」将时间、位置、外观与判定区、移动路径分组，参数名称与数值按列对齐。浅色、深色和工作室灰均适用。",
+		"新谱的时间吸附默认使用 1/8 拍，卷帘上沿可直接改拍内细分。新会话的预览位置网格默认使用 16 × 12。",
+		"「工具 → 提示词编辑器」可编辑全部 Agent 提示词，并导入或导出提示词包。Co-pilot 和 MCP 新增提示词及长期记忆工具。",
+	],
 	"v1.4.3": [
 		"在「参考线量化」选择「传统参考线」，即可填写手动 BPM。点「应用」后，工程 BPM 和参考线网格立即更新。",
 	],
@@ -52,12 +58,12 @@ const ENTRIES := {
 }
 
 static func should_show(current: String, previous: String, has_preferences: bool) -> bool:
-	if current == previous or not ENTRIES.has(current):
+	if current == previous or "-beta." in current or not ENTRIES.has(current):
 		return false
 	if previous.is_empty():
 		return has_preferences
 	var next := current.trim_prefix("v")
-	var last := previous.trim_prefix("v")
+	var last := previous.trim_prefix("v").get_slice("-", 0)
 	var next_count := next.get_slice_count(".")
 	var last_count := last.get_slice_count(".")
 	for index in range(maxi(next_count, last_count)):
@@ -65,4 +71,4 @@ static func should_show(current: String, previous: String, has_preferences: bool
 		var right := last.get_slice(".", index).to_int() if index < last_count else 0
 		if left != right:
 			return left > right
-	return false
+	return "-beta." in previous

@@ -37,6 +37,7 @@ namespace RevelationHub
         public const string Editor = "更好的制谱器";
         private const string Proxy = "https://gh-proxy.org/";
         private const string Catalog = "https://raw.githubusercontent.com/" + Repository + "/main/catalog.signed.json";
+        private const string BetaCatalog = "beta-catalog.signed.json";
         private const long MaxPackage = 4L << 30;
         private const long MaxUnpacked = 8L << 30;
         private readonly HttpClient client;
@@ -54,11 +55,12 @@ namespace RevelationHub
             Directory.CreateDirectory(Versions);
             try { using var gate = AcquireLibrary(); } catch (IOException) { /* Another Hub may be installing. */ }
         }
-        private static string Embedded(string name)
+        private static string Embedded(string name, bool optional = false)
         {
-            using (var stream = HubResources.Open("RevelationHub." + name))
-            using (var reader = new StreamReader(stream ?? throw new InvalidDataException("缺少内置发行信息。")))
-                return reader.ReadToEnd();
+            using var stream = HubResources.Open("RevelationHub." + name);
+            if (stream == null && optional) return null;
+            using var reader = new StreamReader(stream ?? throw new InvalidDataException("缺少内置发行信息。"));
+            return reader.ReadToEnd();
         }
         internal static Release[] ReadCatalog(string signed, string product = "editor")
         {
@@ -66,9 +68,11 @@ namespace RevelationHub
             if (doc == null || doc.schema != 1 || (doc.product ?? "editor") != product || doc.releases == null || doc.releases.Length > 1000) throw new InvalidDataException("版本目录格式有误。");
             var seen = new HashSet<string>();
             foreach (var r in doc.releases)
-                if (r == null || !ValidVersion(r.version) || !seen.Add(r.version) || r.size <= 0 || r.size > MaxPackage ||
+                if (r == null || !EditorVersion.TryParse(r.version, out var version) ||
+                    (product != "cuda" && version.Beta.HasValue != (product == "editor-beta")) ||
+                    !seen.Add(r.version) || r.size <= 0 || r.size > MaxPackage ||
                     !Regex.IsMatch(r.sha256 ?? "", "^[a-fA-F0-9]{64}$")) throw new InvalidDataException("发行条目有误。");
-            return doc.releases.OrderByDescending(r => Version.Parse(r.version)).ToArray();
+            return SortReleases(doc.releases);
         }
         internal static T ReadSigned<T>(string signed)
         {
@@ -83,10 +87,21 @@ namespace RevelationHub
             }
             return JsonSerializer.Deserialize<T>(bytes);
         }
-        private static bool ValidVersion(string value) =>
-            Regex.IsMatch(value ?? "", @"^[0-9]{1,5}\.[0-9]{1,5}\.[0-9]{1,5}$") && Version.TryParse(value, out _);
+        private static bool ValidVersion(string value) => EditorVersion.TryParse(value, out _);
+        internal static Release[] SortReleases(IEnumerable<Release> releases) =>
+            releases.OrderByDescending(r => EditorVersion.Parse(r.version)).ToArray();
+
+        internal static Release StableUpdate(IEnumerable<Release> releases, string installed, IReadOnlySet<string> local)
+        {
+            if (!EditorVersion.TryParse(installed, out var current) || current.Beta.HasValue) return null;
+            return releases.Where(r => !EditorVersion.IsBeta(r.version) && !local.Contains(r.version) &&
+                EditorVersion.Parse(r.version).CompareTo(current) > 0).MaxBy(r => EditorVersion.Parse(r.version));
+        }
+
         private string Cache => Path.Combine(Root, "catalog.signed.json");
-        public Release[] Offline()
+        public Release[] Offline() => SortReleases(OfflineStable().Concat(OfflineBeta()));
+
+        private Release[] OfflineStable()
         {
             if (File.Exists(Cache))
                 try { var result = ReadCatalog(File.ReadAllText(Cache)); CatalogSource = "已缓存版本库"; return result; }
@@ -94,7 +109,40 @@ namespace RevelationHub
             CatalogSource = "内置版本库";
             return ReadCatalog(Embedded("catalog.signed.json"));
         }
+        private Release[] OfflineBeta()
+        {
+            string cache = Path.Combine(Root, BetaCatalog);
+            if (File.Exists(cache))
+                try { return ReadCatalog(File.ReadAllText(cache), "editor-beta"); }
+                catch (Exception ex) when (ex is IOException or InvalidDataException or FormatException or JsonException or CryptographicException) { }
+            string embedded = Embedded(BetaCatalog, optional: true);
+            return embedded == null ? [] : ReadCatalog(embedded, "editor-beta");
+        }
+
         public async Task<Release[]> Refresh(CancellationToken ct)
+        {
+            var stable = RefreshStable(ct);
+            var beta = RefreshBeta(ct);
+            await Task.WhenAll(stable, beta).ConfigureAwait(false);
+            return SortReleases(stable.Result.Concat(beta.Result));
+        }
+
+        private async Task<Release[]> RefreshBeta(CancellationToken ct)
+        {
+            try
+            {
+                return await new HubServices(Root, client)
+                    .ReadFeed(BetaCatalog, signed => ReadCatalog(signed, "editor-beta"), ct, 1 << 20)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is IOException or InvalidDataException or FormatException or JsonException or CryptographicException)
+            {
+                ct.ThrowIfCancellationRequested();
+                return OfflineBeta();
+            }
+        }
+
+        private async Task<Release[]> RefreshStable(CancellationToken ct)
         {
             foreach (var url in new[] { Catalog, "https://cdn.jsdelivr.net/gh/" + Repository + "@main/catalog.signed.json", Proxy + Catalog })
             {
@@ -127,7 +175,7 @@ namespace RevelationHub
                 { ct.ThrowIfCancellationRequested(); }
             }
             CatalogSynced = false;
-            var fallback = Offline();
+            var fallback = OfflineStable();
             CatalogSource = "在线目录不可用 · " + CatalogSource;
             return fallback;
         }

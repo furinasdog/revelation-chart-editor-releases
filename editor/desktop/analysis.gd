@@ -207,8 +207,8 @@ func _analyze_rhythm(audio_path: String, preferred_ffmpeg: String, options: Dict
 	var results := {}
 	var duration := 0.0
 	var accent_filter := {}
-	var capture_levels: Array[float] = []
-	var level_task: String = tasks[0] if not str(options.get("capture_stem", "")).is_empty() else ""
+	var capture_levels := {}
+	var measure_levels := not str(options.get("capture_stem", "")).is_empty()
 	var accent_source := "beats" if engine == "native" else "onsets"
 	for backend: String in plans:
 		var rate := PCM_RATE if backend == "native" else EXTERNAL_RATE
@@ -234,8 +234,10 @@ func _analyze_rhythm(audio_path: String, preferred_ffmpeg: String, options: Dict
 			duration = maxf(duration, count * 1000.0 / rate)
 			if backend == engine and ("accents" in tasks or (not options.has("capture_id") and accent_source in tasks)) and not result.has("error"):
 				accent_filter = _measure_accent_filter(pcm_path, rate, accent_source, result.get(accent_source, []))
-			if backend == engine and level_task in ["beats", "downbeats", "onsets"] and result.has(level_task):
-				capture_levels = _capture_levels(pcm_path, rate, result[level_task])
+			if backend == engine and measure_levels:
+				for task: String in tasks:
+					if task in ["beats", "downbeats", "onsets"] and result.has(task):
+						capture_levels[task] = _capture_levels(pcm_path, rate, result[task])
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(pcm_path))
 		results[backend] = result
 	var combined := {"duration_ms": duration, "task_errors": task_errors}
@@ -253,7 +255,9 @@ func _analyze_rhythm(audio_path: String, preferred_ffmpeg: String, options: Dict
 	if not accent_filter.is_empty():
 		combined["accent_filter"] = accent_filter
 	if not capture_levels.is_empty():
-		combined["capture_levels"] = capture_levels
+		combined["capture_levels_by_task"] = capture_levels
+		if tasks.size() == 1:
+			combined["capture_levels"] = capture_levels[tasks[0]]
 	if combined.has("accents"):
 		var sensitivity := int(options.get("accent_sensitivity", DEFAULT_ACCENT_SENSITIVITY))
 		combined["accents"] = filter_accents(accent_filter.get("points", []), sensitivity)

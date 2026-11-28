@@ -3,6 +3,7 @@ extends SceneTree
 const Analysis := preload("res://desktop/analysis.gd")
 const Cache := preload("res://desktop/stem_cache.gd")
 const CaptureCatalog := preload("res://desktop/capture_catalog.gd")
+const Plan := preload("res://desktop/auto_chart_plan.gd")
 
 var failures := 0
 
@@ -75,6 +76,15 @@ func _run() -> void:
 		await desk.analysis.completed
 	var mix: Dictionary = chart.rhythm_analysis.duplicate(true)
 	_check(mix.get("capture_id") == "tempo" and absf(chart.bpm - 120) < 4.0 and panel._run.text == "应用", "Original audio is analyzed and cached")
+	var agent: Node = desk.copilot._agent
+	agent.open_tool_session(Plan.new(chart), {}, [], null, {"reanalyze": desk._analyze_for_agent})
+	var unavailable: Dictionary = await agent.call_workspace_tool("analyze_audio", {"capture_id": "tempo", "stem": "drums"}, Vector2.ZERO)
+	_check(unavailable.has("error") and unavailable.error.contains("分轨") and agent._analysis_requests == 0,
+		"An unavailable stem is reported without substituting the full mix")
+	for id: String in CaptureCatalog.ENTRIES:
+		var options := CaptureCatalog.agent_options({"capture_id": id, "stem": "vocals"})
+		_check(not options.has("error") and options.model == CaptureCatalog.ENTRIES[id].model and options.capture_stem == "vocals",
+			"Agent exposes UI capture " + id)
 
 	var folder: String = service._cache_dir
 	DirAccess.make_dir_recursive_absolute(folder)
@@ -82,13 +92,31 @@ func _run() -> void:
 		_write_clicks(folder.path_join(stem + ".wav"), 150 if stem == "drums" else 120)
 	service.refresh()
 	var drums_path: String = service.stem_path("drums")
+	var result: Dictionary = await agent.call_workspace_tool("analyze_audio", {"capture_id": "tempo", "stem": "drums"}, Vector2.ZERO)
+	_check(result.get("stem") == "drums" and absf(float(result.get("detected_bpm", 0)) - 150.0) < 4.0 and chart.rhythm_analysis == mix,
+		"Agent infers actual drum tempo without changing the chart guide")
+	var degara: Dictionary = await agent.call_workspace_tool("analyze_audio",
+		{"engine": "essentia", "model": "Degara", "tasks": ["beats", "tempo"], "stem": "drums", "limit": 4}, Vector2.ZERO)
+	_check(not degara.has("error") and degara.get("model") == "degara" and degara.get("results", {}).get("beats", {}).get("total", 0) > 4,
+		"Agent can request native Essentia Degara inference with an explicit model")
+	var repeated: Dictionary = await agent.call_workspace_tool("analyze_audio", {"capture_id": "beat-degara", "stem": "drums"}, Vector2.ZERO)
+	_check(repeated.get("cache_hits") == ["beats"] and agent._analysis_requests == 2, "Preset and explicit model calls share the same track cache")
+	var model_dir := OS.get_cmdline_user_args()
+	if not model_dir.is_empty():
+		desk.preferences.analysis_options["madmom_model_cache"] = model_dir[0]
+		var madmom: Dictionary = await agent.call_workspace_tool("analyze_audio",
+			{"capture_id": "onset-rnn", "stem": "drums"}, Vector2.ZERO)
+		_check(not madmom.has("error") and madmom.get("model") == "recurrent"
+			and madmom.get("results", {}).get("onsets", {}).get("total", 0) > 10,
+			"Agent uses the configured madmom model directory and recurrent onset inference")
+	agent.cancel()
 	source.item_selected.emit(2)
-	_check(panel._run.text == "采音" and chart.rhythm_analysis == mix and not panel._summary.visible,
+	_check(panel._run.text == "应用" and chart.rhythm_analysis == mix and not panel._summary.visible,
 		"Switching inputs leaves the applied result and shows independent cache state")
 	chart.set_audio_delay(500.0)
 	panel._run.pressed.emit()
-	_check(desk._analyzing and desk._analysis_capture_input.get("path") == drums_path and source.disabled,
-		"The selected stem is used as the real inference input")
+	_check(not desk._analyzing and "已应用缓存" in panel._summary.text,
+		"The capture panel can apply the cache produced by the Agent")
 	if desk._analyzing:
 		await desk.analysis.completed
 	var drums: Dictionary = chart.rhythm_analysis.duplicate(true)

@@ -65,9 +65,11 @@ public partial class MainWindow
 
     private void AnnounceEditorUpdate()
     {
-        var latest = available.OrderByDescending(r => Version.Parse(r.version)).FirstOrDefault();
-        var installed = library.LocalVersions().Select(Version.Parse).OrderDescending().FirstOrDefault();
-        if (latest == null || installed == null || Version.Parse(latest.version) <= installed) return;
+        if (EditorVersion.IsBeta(editor?.Version)) return;
+        var local = library.LocalVersions().ToHashSet();
+        var installed = local.Where(v => !EditorVersion.IsBeta(v)).MaxBy(EditorVersion.Parse);
+        var latest = Distribution.StableUpdate(available, installed, local);
+        if (latest == null) return;
         string key = "editor/" + latest.version;
         ShowDialogMessage(new(key, $"制谱器 v{latest.version} 可更新",
             $"当前已安装 v{installed}。\n\n{latest.notes}", [key], "查看更新", () => Navigate("已安装"), "稍后"));

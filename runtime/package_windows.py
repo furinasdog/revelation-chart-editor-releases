@@ -36,7 +36,8 @@ def sources():
 
 
 def create(export, deps, output):
-    version = re.search(r'^config/version="([\d.]+)"$', (ROOT / "editor/project.godot").read_text("utf-8"), re.M)[1]
+    version = re.search(r'^config/version="(\d+\.\d+\.\d+(?:-beta\.[1-9]\d*)?)"$',
+                        (ROOT / "editor/project.godot").read_text("utf-8"), re.M)[1]
     app = Path(APP)
     archives = [f"Revelation-Editor-v{version}-Windows-x64.zip", f"Revelation-Editor-v{version}-LocalSource.zip"]
     output.mkdir(parents=True, exist_ok=True)

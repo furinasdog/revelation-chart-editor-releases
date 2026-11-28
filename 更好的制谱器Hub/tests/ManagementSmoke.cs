@@ -12,6 +12,67 @@ using RevelationHub;
 
 internal partial class Program
 {
+    private sealed class BetaAssets(string catalog, string manifest, string archive) : HttpMessageHandler
+    {
+        internal int FullRequests;
+        internal bool Offline;
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            string name = Path.GetFileName(request.RequestUri.AbsolutePath);
+            if (Offline) return Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+            HttpContent content = name switch
+            {
+                "catalog.signed.json" => new StreamContent(HubResources.Open("RevelationHub.catalog.signed.json")),
+                "beta-catalog.signed.json" => new StreamContent(File.OpenRead(catalog)),
+                _ when name == Path.GetFileName(manifest) => new StreamContent(File.OpenRead(manifest)),
+                _ when name == Path.GetFileName(archive) => FullPackage(),
+                _ => throw new InvalidOperationException("Unexpected asset request " + name)
+            };
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = content });
+        }
+        private HttpContent FullPackage()
+        {
+            FullRequests++;
+            return new StreamContent(File.OpenRead(archive));
+        }
+    }
+
+    private static async Task CheckBeta(string catalog, string manifest, string archive)
+    {
+        var routes = new BetaAssets(catalog, manifest, archive);
+        using var client = new HttpClient(routes);
+        var temp = Directory.CreateTempSubdirectory("hub-beta-");
+        try
+        {
+            var library = new Distribution(temp.FullName, client);
+            var releases = await library.Refresh(default);
+            var beta = releases.Single(r => EditorVersion.IsBeta(r.version));
+            var stable = releases.Where(r => !EditorVersion.IsBeta(r.version)).ToArray();
+            Check(stable.Length > 0 && library.CatalogSynced, "Stable and Beta signed catalogs load independently");
+            Check(EditorVersion.Parse("1.5.0-beta.2").CompareTo(EditorVersion.Parse("1.5.0-beta.10")) < 0 &&
+                EditorVersion.Parse("1.5.0-beta.10").CompareTo(EditorVersion.Parse("1.5.0")) < 0,
+                "Numeric Beta sequence sorts ahead of older Beta and below its stable version");
+            Check(Distribution.StableUpdate([beta], stable[0].version, new HashSet<string>()) == null &&
+                Distribution.StableUpdate(releases, beta.version, new HashSet<string>()) == null &&
+                Distribution.StableUpdate(releases, "1.0.0", new HashSet<string>())?.version == stable[0].version,
+                "Beta has no update offer and stable-to-stable offers still work");
+            var progress = new Observer();
+            await library.Install(beta, progress, default);
+            Check(library.Installed(beta.version) && library.LocalVersions().Contains(beta.version) && routes.FullRequests > 0,
+                "A signed Beta installs into a recognizable local slot from the full ZIP");
+            var index = Distribution.ReadSigned<FileIndex>(File.ReadAllText(manifest));
+            Check(index.version == beta.version && index.patches.Length == 0 &&
+                (await library.Verify(beta, progress, default)).Count == 0, "Beta assets verify and the manifest contains no delta");
+            int before = routes.FullRequests;
+            await library.Update(beta, beta, progress, default);
+            Check(routes.FullRequests > before && library.Installed(beta.version), "Beta repair requests the full asset");
+            routes.Offline = true;
+            Check((await library.Refresh(default)).Any(r => r.version == beta.version) && !library.CatalogSynced,
+                "A verified Beta remains recognized offline with the signed cache");
+        }
+        finally { temp.Delete(true); }
+    }
+
     private sealed class LocalAssets(string full,string delta):HttpMessageHandler
     {
         internal int Patches,Full;

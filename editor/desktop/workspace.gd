@@ -3,6 +3,8 @@ extends Node
 signal models_refreshed
 
 const DialogLayout := preload("res://desktop/dialog_layout.gd")
+const OfficialAccess := preload("res://desktop/official_access.gd")
+const UserAgreement := preload("res://desktop/user_agreement.gd")
 
 const DesktopFileDialog := preload("res://desktop/desktop_file_dialog.gd")
 const Preferences := preload("res://desktop/preferences.gd")
@@ -17,6 +19,7 @@ const ManagedModels := preload("res://desktop/managed_models.gd")
 const TempoPlot := preload("res://desktop/tempo_plot.gd")
 const EditorLabels := preload("res://desktop/editor_labels.gd")
 const ReferenceMode = preload("res://main/chart_data.gd").ReferenceMode
+const SnapSelect := preload("res://main/snap_select.gd")
 const ToolPalette := preload("res://desktop/tool_palette.gd")
 const NumberDrag := preload("res://desktop/number_drag.gd")
 const VideoExport := preload("res://desktop/video_export.gd")
@@ -28,6 +31,7 @@ const StemMonitor := preload("res://desktop/stem_monitor.gd")
 const MelodyPlot := preload("res://desktop/melody_plot.gd")
 const EditorTheme := preload("res://desktop/editor_theme.gd")
 const About := preload("res://desktop/about.gd")
+const PromptEditor := preload("res://desktop/agent_prompt_editor.gd")
 const SpectrumTheme := preload("res://desktop/spectrum_theme.gdshader")
 const LrcLyrics := preload("res://desktop/lrc_lyrics.gd")
 const FeatureFinder := preload("res://desktop/feature_finder.gd")
@@ -39,12 +43,11 @@ const ScriptWorkspace := preload("res://desktop/script_workspace.gd")
 const ChartStorage := preload("res://desktop/chart_storage.gd")
 const STARTUP_SOUND := preload("res://desktop/startup.wav")
 const BAR := 32.0
-const SECTION := 36.0
-const TIP_BAR_HEIGHT := 36.0
-const GAP := 5.0
-const TIMELINE_TOOLBAR_MARGIN := 8.0
-const PANE := Color("#202734")
-const MUTED := Color("#a9b6c9")
+const SECTION := 32.0
+const TIP_BAR_HEIGHT := 28.0
+const GAP := 4.0
+const TIMELINE_TOOLBAR_MARGIN := 2.0
+const DEFAULT_EVENT_TOOL_ITEM := 299
 
 const BRUSH_TIPS := {
 	0: "在卷帘轨道内单击，放置普通键。",
@@ -57,6 +60,7 @@ const BRUSH_TIPS := {
 }
 
 var host: Control
+var access := OfficialAccess.new()
 var chart: Node
 var sidebar: Control
 var preview: Control
@@ -69,6 +73,9 @@ var mcp := McpWorkspace.new()
 var background_mode := false
 var scripts := ScriptWorkspace.new()
 var _copilot_menu: PopupMenu
+var _tool_menu_entries: Array = []
+var _analysis_menu: PopupMenu
+var _unlock_dialog: AcceptDialog
 var _copilot_item := -1
 var _copilot_divider: ColorRect
 var _dragging_splitter: ColorRect
@@ -149,6 +156,7 @@ var _screen_poll := 0.0
 var _screen_pixels := Vector2i.ZERO
 var _screen_dpi := 96
 var _about: Window
+var _prompt_editor: PromptEditor
 var _release_dialog: AcceptDialog
 var _feature_finder: Window
 var _empty: CenterContainer
@@ -158,6 +166,7 @@ var _save_folder: DesktopFileDialog
 var _save_folder_generation := -1
 var _inspector_title: Label
 var _mode_choice: OptionButton
+var _snap_division: OptionButton
 var _time_snap: CheckButton
 var _position_snap: CheckButton
 var _canvas_place: Button
@@ -244,6 +253,7 @@ func attach(editor: Control) -> void:
 	_build_empty()
 	_build_tips()
 	_setup_input()
+	_refresh_feature_visibility()
 	_inspector_divider = _splitter(false)
 	_timeline_divider = _splitter(true)
 	_copilot_divider = _splitter(false, true)
@@ -290,9 +300,79 @@ func attach(editor: Control) -> void:
 	_update_menu_shortcuts()
 	_apply_theme()
 	if not background_mode and DisplayServer.get_name() != "headless":
-		_check_release_notice.call_deferred()
-	if not background_mode and preferences.play_startup_sound and DisplayServer.get_name() != "headless":
+		_begin_official_use.call_deferred()
+
+func features_enabled() -> bool:
+	return access.features_enabled()
+
+func _begin_official_use() -> void:
+	if not access.has_agreed():
+		if not await _confirm_user_agreement("同意并继续", "退出"):
+			get_tree().quit()
+			return
+		if not access.accept_agreement():
+			OS.alert("无法保存协议确认。请检查本机用户目录的写入权限。", "更好的制谱器")
+			get_tree().quit(1)
+			return
+	_refresh_feature_visibility()
+	_onboarding._maybe_prompt()
+	_check_release_notice.call_deferred()
+	if preferences.play_startup_sound:
 		_play_startup_sound()
+
+func _confirm_user_agreement(confirm: String, decline: String) -> bool:
+	if access.agreement_text.is_empty():
+		return false
+	var dialog := UserAgreement.new()
+	dialog.theme = _ui_theme
+	host.add_child(dialog)
+	dialog.present(access.agreement_text, confirm, decline)
+	return await dialog.decided
+
+func _open_unlock() -> void:
+	if not access.has_agreed():
+		return
+	if not is_instance_valid(_unlock_dialog):
+		_unlock_dialog = AcceptDialog.new()
+		_unlock_dialog.title = "功能解锁"
+		_unlock_dialog.ok_button_text = "关闭"
+		_unlock_dialog.exclusive = true
+		_unlock_dialog.transient = true
+		_unlock_dialog.theme = _ui_theme
+		host.add_child(_unlock_dialog)
+		var body := VBoxContainer.new()
+		_unlock_dialog.add_child(body)
+		var hint := _label("复制本机机器码并发给原作者申请解锁。收到后在此输入解锁码。")
+		hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		body.add_child(hint)
+		var code := LineEdit.new()
+		code.max_length = 530
+		code.placeholder_text = "粘贴解锁码"
+		body.add_child(code)
+		var status := _label("已解锁。" if features_enabled() else "")
+		status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		var actions := HFlowContainer.new()
+		body.add_child(actions)
+		actions.add_child(_button("复制机器码…", _copy_unlock_machine_code.bind(status)))
+		actions.add_child(_button("验证并解锁", func():
+			var error := access.install_code(code.text)
+			status.text = error if not error.is_empty() else "已解锁。"
+			if error.is_empty():
+				code.clear()
+				_refresh_feature_visibility()))
+		body.add_child(status)
+	DialogLayout.present(_unlock_dialog, Vector2i(550, 230))
+
+func _copy_unlock_machine_code(status: Label) -> void:
+	_unlock_dialog.hide()
+	var accepted := await _confirm_user_agreement("同意并复制机器码", "取消")
+	if accepted and access.has_agreed():
+		if access._machine_code.is_empty():
+			status.text = "无法读取本机标识。"
+		else:
+			DisplayServer.clipboard_set(access._machine_code)
+			status.text = "机器码已复制。请通过原作者的联系方式发送。"
+	_open_unlock()
 
 func _play_startup_sound() -> void:
 	if not _startup_player:
@@ -302,17 +382,15 @@ func _play_startup_sound() -> void:
 	_startup_player.volume_db = linear_to_db(maxf(0.0001, preferences.startup_sound_volume))
 	_startup_player.play()
 
-func _box(name: String, color: Color = PANE) -> PanelContainer:
+func _box(name: String) -> PanelContainer:
 	var panel := PanelContainer.new()
 	panel.name = name
 	var style := StyleBoxFlat.new()
-	style.bg_color = color
 	style.content_margin_left = 8
 	style.content_margin_right = 8
 	style.content_margin_top = 3
 	style.content_margin_bottom = 3
 	panel.add_theme_stylebox_override("panel", style)
-	panel.set_meta("theme_surface", color)
 	host.add_child(panel)
 	return panel
 
@@ -338,6 +416,15 @@ func _add_menu(row: HBoxContainer, label: String, items: Array) -> PopupMenu:
 	row.add_child(button)
 	var popup := button.get_popup()
 	popup.theme_type_variation = &"DesktopCommandPopup"
+	_fill_menu(popup, items)
+	popup.id_pressed.connect(func(id: int):
+		var action: Callable = items[id][1]
+		diagnostics.record("menu", {"group": label, "command": items[id][0]})
+		action.call()
+	)
+	return popup
+
+func _fill_menu(popup: PopupMenu, items: Array) -> void:
 	for item: Array in items:
 		var id := popup.item_count
 		if item.is_empty():
@@ -346,15 +433,9 @@ func _add_menu(row: HBoxContainer, label: String, items: Array) -> PopupMenu:
 		popup.add_item(item[0], id)
 		if item.size() == 3:
 			_menu_commands[item[2]] = [popup, id, item[0]]
-	popup.id_pressed.connect(func(id: int):
-		var action: Callable = items[id][1]
-		diagnostics.record("menu", {"group": label, "command": items[id][0]})
-		action.call()
-	)
-	return popup
 
 func _build_menu() -> void:
-	_menu = _box("DesktopMenu", Color("#171d28"))
+	_menu = _box("DesktopMenu")
 	var bar_style := _menu.get_theme_stylebox("panel") as StyleBoxFlat
 	bar_style.content_margin_top = 2
 	bar_style.content_margin_bottom = 2
@@ -380,18 +461,13 @@ func _build_menu() -> void:
 		["切换边缘滚动", func(): grid.edge_scroll_enabled = not grid.edge_scroll_enabled],
 		["手序与引导预览…", _open_hand_guide],
 	])
-	_add_menu(row, "分析", [
+	_analysis_menu = _add_menu(row, "分析", [
 		["自动采音设置", _open_analysis_settings],
 		["分析 RMVPE 人声音高", _analyze_vocal_pitch],
 		["按当前设置分析", _request_analysis], ["写入谱面速度", _apply_curve],
 		["试听采音标记", _audition_analysis],
 	])
-	_copilot_menu = _add_menu(row, "工具", [
-		[CoPilot.TITLE, _toggle_copilot], ["MCP 服务器…", mcp.open], ["Agent 设置…", automatic.open_settings], [],
-		["导入参考谱…", scripts.open_reference_import], ["运行 .rpy…", scripts.open_script],
-	])
-	_copilot_item = 0
-	_copilot_menu.set_item_as_checkable(_copilot_item, true)
+	_copilot_menu = _add_menu(row, "工具", _tool_menu_entries)
 	_add_menu(row, "帮助", [["功能速查…", _open_feature_finder], ["首次设置…", _onboarding.open],
 		["首次制谱教程…", _onboarding.open_beginner], ["原版迁移引导…", _onboarding.open_migration],
 		[], ["版本更新公告…", _open_release_notes], ["导出错误包…", _open_diagnostic_export], ["关于更好的制谱器…", _open_about]])
@@ -401,17 +477,45 @@ func _build_menu() -> void:
 	_audio_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	_audio_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(_audio_label)
-	row.add_child(VSeparator.new())
-	_time_display = _label("00:00.0")
-	_time_display.custom_minimum_size.x = 70
-	_time_display.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_time_display.tooltip_text = "当前谱面时间（分:秒）"
-	_time_display.mouse_filter = Control.MOUSE_FILTER_PASS
-	row.add_child(_time_display)
 	_update_menu_shortcuts()
+
+func _refresh_feature_visibility() -> void:
+	var enabled := features_enabled()
+	_copilot_menu.clear()
+	_tool_menu_entries.clear()
+	_copilot_item = -1
+	if enabled:
+		_copilot_item = 0
+		_tool_menu_entries.append_array([[CoPilot.TITLE, _toggle_copilot], ["MCP 服务器…", mcp.open],
+			["Agent 设置…", automatic.open_settings], ["提示词编辑器…", _open_prompt_editor], []])
+	_tool_menu_entries.append_array([["功能解锁…", _open_unlock], ["导入参考谱…", scripts.open_reference_import],
+		["运行 .rpy…", scripts.open_script]])
+	_fill_menu(_copilot_menu, _tool_menu_entries)
+	if enabled:
+		_copilot_menu.set_item_as_checkable(_copilot_item, true)
+		_copilot_menu.set_item_checked(_copilot_item, copilot.visible)
+	_analysis_menu.get_parent().visible = enabled
+	_tabs.set_tab_hidden(_analysis_panel.get_index(), not enabled)
+	_results_tabs.set_tab_hidden(1, not enabled)
+	sidebar.set_capture_access(enabled)
+	var guide_index := _mode_choice.get_item_index(ReferenceMode.BEATS)
+	if enabled and guide_index < 0:
+		_mode_choice.add_item("自动采音线", ReferenceMode.BEATS)
+		_mode_choice.set_item_tooltip(_mode_choice.item_count - 1, "显示上一次采音或应用的结果")
+	elif not enabled and guide_index >= 0:
+		_mode_choice.remove_item(guide_index)
 
 func _toggle_copilot() -> void:
 	_set_copilot_visible(not copilot.visible)
+
+func _open_prompt_editor() -> void:
+	if not features_enabled():
+		return
+	if not _prompt_editor:
+		_prompt_editor = PromptEditor.new()
+		host.add_child(_prompt_editor)
+	_prompt_editor.theme = _ui_theme
+	_prompt_editor.open()
 
 func _current_release_tag() -> String:
 	return "v" + str(ProjectSettings.get_setting("application/config/version", ""))
@@ -451,10 +555,13 @@ func _open_release_notes() -> void:
 	DialogLayout.present(_release_dialog, Vector2i(540, 375))
 
 func _set_copilot_visible(enabled: bool) -> void:
+	if enabled and not features_enabled():
+		return
 	if not enabled:
 		copilot.cancel()
 	copilot.visible = enabled
-	_copilot_menu.set_item_checked(_copilot_item, enabled)
+	if _copilot_item >= 0:
+		_copilot_menu.set_item_checked(_copilot_item, enabled)
 	apply_layout()
 
 func _record_chart_edit(id: int, action: String) -> void:
@@ -497,14 +604,16 @@ func _open_note_menu(time_ms: int, lane: int, note_id: int) -> void:
 	if note_id >= 0 and note_id not in chart.selected_note_ids: chart.select_note(note_id)
 	var menu := PopupMenu.new()
 	host.add_child(menu)
-	for caption in ["复制", "粘贴", "复制为 JSON（跨工程）", "粘贴 JSON（跨工程）", "让助手修改此段", "删除此音符", "手序与引导预览"]:
-		menu.add_item(caption)
-	for index in [0, 2]: menu.set_item_disabled(index, chart.selected_note_ids.is_empty())
-	menu.set_item_disabled(5, note_id < 0)
-	menu.set_item_disabled(6, chart.selected_note_ids.is_empty())
-	menu.set_item_disabled(1, chart.clipboard_notes.is_empty())
-	menu.set_item_disabled(4, _loop_range.y <= _loop_range.x)
-	menu.index_pressed.connect(_note_menu_action.bind(time_ms, lane, note_id))
+	var captions := ["复制", "粘贴", "复制为 JSON（跨工程）", "粘贴 JSON（跨工程）", "让助手修改此段", "删除此音符", "手序与引导预览"]
+	for id in range(captions.size()):
+		if id != 4 or features_enabled():
+			menu.add_item(captions[id], id)
+	for id in [0, 2, 6]: menu.set_item_disabled(menu.get_item_index(id), chart.selected_note_ids.is_empty())
+	menu.set_item_disabled(menu.get_item_index(5), note_id < 0)
+	menu.set_item_disabled(menu.get_item_index(1), chart.clipboard_notes.is_empty())
+	if features_enabled():
+		menu.set_item_disabled(menu.get_item_index(4), _loop_range.y <= _loop_range.x)
+	menu.id_pressed.connect(_note_menu_action.bind(time_ms, lane, note_id))
 	menu.popup_hide.connect(menu.queue_free)
 	menu.position = Vector2i(host.get_viewport().get_mouse_position())
 	menu.popup()
@@ -522,6 +631,8 @@ func _note_menu_action(index: int, time_ms: int, lane: int, note_id: int) -> voi
 		6: _open_hand_guide()
 
 func _open_phrase_edit() -> void:
+	if not features_enabled():
+		return
 	_set_copilot_visible(true)
 	copilot.prepare_selection(_loop_range)
 
@@ -569,8 +680,6 @@ func _build_inspector() -> void:
 	_tabs.tab_alignment = TabBar.ALIGNMENT_LEFT
 	_tabs.clip_tabs = true
 	_tabs.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_tabs.offset_left = 6
-	_tabs.offset_right = -6
 	_tabs.offset_top = SECTION
 	var waveform_page := _tabs.get_node_or_null("波形") as Control
 	if waveform_page:
@@ -596,22 +705,26 @@ func _build_inspector() -> void:
 	_inspector_heading = _box("InspectorHeader")
 	var heading := HBoxContainer.new()
 	_inspector_heading.add_child(heading)
-	_inspector_title = _label("检查器")
+	_inspector_title = _label("检查器", 13)
 	_inspector_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_inspector_title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	heading.add_child(_inspector_title)
 	var page_menu := MenuButton.new()
 	page_menu.text = "全部页签"
 	page_menu.tooltip_text = "查看检查器中的所有设置页"
+	page_menu.flat = true
 	heading.add_child(page_menu)
 	var pages := page_menu.get_popup()
 	pages.theme_type_variation = &"DesktopMenuPopup"
-	for i in range(_tabs.get_tab_count()):
-		pages.add_radio_check_item(_tabs.get_tab_title(i), i)
 	pages.about_to_popup.connect(func():
-		for i in range(pages.item_count):
-			pages.set_item_checked(i, i == _tabs.current_tab))
-	pages.id_pressed.connect(func(index: int): sidebar.open_settings_tab(index))
+		pages.clear()
+		for i in range(_tabs.get_tab_count()):
+			if not _tabs.is_tab_hidden(i):
+				pages.add_radio_check_item(_tabs.get_tab_title(i), i)
+				pages.set_item_checked(pages.item_count - 1, i == _tabs.current_tab))
+	pages.id_pressed.connect(func(index: int):
+		if not _tabs.is_tab_hidden(index):
+			sidebar.open_settings_tab(index))
 	_tabs.current_tab = _analysis_panel.get_index()
 	_tabs.tab_changed.connect(func(_index: int): _refresh_tip())
 	_tabs.tab_changed.connect(func(_index: int):
@@ -627,7 +740,7 @@ func _build_inspector() -> void:
 
 func _open_inspector_page(page_name: String) -> void:
 	var page := _tabs.get_node_or_null(NodePath(page_name))
-	if page:
+	if page and not _tabs.is_tab_hidden(page.get_index()):
 		sidebar.open_settings_tab(page.get_index())
 
 func _build_background_inspector() -> void:
@@ -788,22 +901,13 @@ func _refresh_inspector(_id := -1) -> void:
 	if count == 0:
 		_inspector_title.text = "检查器"
 		return
-	var types: Array[int] = []
-	for id: int in chart.selected_note_ids:
-		var note = chart.get_note_data(id)
-		if note and note.type not in types:
-			types.append(note.type)
-	var label := "音符"
-	if types.size() == 1 and types[0] in [0, 1, 2]:
-		label = ["普通键", "滑键", "长键"][types[0]]
-	_inspector_title.text = "%s · 已选 %d 个" % [label, count]
+	_inspector_title.text = "检查器  ·  选中 %d" % count
 	if count == 1:
 		var note = chart.get_note_data(chart.selected_note_ids[0])
 		if note:
 			var judge: int = note.judge_time if note.type == 2 else note.end_time
-			summary.text = "#%d · %s\n判定 %d 毫秒    时长 %d 毫秒\n位置  %.0f，%.0f" % [
-				chart.selected_note_ids[0], chart.ruler_position(judge).label, judge,
-				note.end_time - note.start_time, note.position.x, note.position.y]
+			summary.text = "#%d  %s  ·  时长 %d 毫秒" % [
+				chart.selected_note_ids[0], chart.ruler_position(judge).label, note.end_time - note.start_time]
 
 func _open_about() -> void:
 	if not _about:
@@ -836,7 +940,7 @@ func _mount_preview_tools() -> void:
 		row.queue_free()
 
 func _build_tool_rail(row: Container) -> void:
-	_rail = _box("BrushRail", Color("#1b222e"))
+	_rail = _box("BrushRail")
 	_rail.reparent(row, false)
 	var style: StyleBoxFlat = _rail.get_theme_stylebox("panel").duplicate()
 	style.content_margin_left = 4
@@ -871,12 +975,15 @@ func _build_tool_rail(row: Container) -> void:
 		_tools[entry[0]] = tool
 	_event_tools = MenuButton.new()
 	_event_tools.text = "事件"
+	_event_tools.flat = true
 	_event_tools.switch_on_hover = false
-	_event_tools.get_popup().theme_type_variation = &"DesktopMenuPopup"
+	var event_menu := _event_tools.get_popup()
+	event_menu.theme_type_variation = &"DesktopMenuPopup"
+	event_menu.add_radio_check_item("恢复默认（选择）", DEFAULT_EVENT_TOOL_ITEM)
 	for entry: Array in _tool_entries:
 		if entry[0] >= 300:
-			_event_tools.get_popup().add_radio_check_item(entry[2], entry[0])
-	_event_tools.get_popup().id_pressed.connect(_choose_tool)
+			event_menu.add_radio_check_item(entry[2], entry[0])
+	event_menu.id_pressed.connect(func(id: int): _choose_tool(-1 if id == DEFAULT_EVENT_TOOL_ITEM else id))
 	tools.add_child(_event_tools)
 	_background_toggle = _button("背景与遮罩", func(): _set_background_track(_background_toggle.button_pressed))
 	_background_toggle.toggle_mode = true
@@ -896,6 +1003,7 @@ func _choose_tool(id: int) -> void:
 func _build_track_bar() -> void:
 	_track_bar = _box("TimelineHeader")
 	var rows := VBoxContainer.new()
+	rows.add_theme_constant_override("separation", 3)
 	_track_bar.add_child(rows)
 	_build_tool_rail(rows)
 	var row := HFlowContainer.new()
@@ -910,6 +1018,14 @@ func _build_track_bar() -> void:
 	_mode_choice.set_item_tooltip(1, "显示上一次采音或应用的结果")
 	_mode_choice.item_selected.connect(func(index: int): sidebar.set_guide_mode(_mode_choice.get_item_id(index)))
 	row.add_child(_mode_choice)
+	_snap_division = SnapSelect.new()
+	_snap_division.tooltip_text = "拍内细分：每拍分为几格"
+	_snap_division.item_selected.connect(chart.set_snap_index)
+	row.add_child(_snap_division)
+	var refresh_division := func(): _snap_division.select(chart.current_snap_index)
+	chart.settings_changed.connect(refresh_division)
+	chart.force_refresh_requested.connect(refresh_division)
+	refresh_division.call()
 	_time_snap = CheckButton.new()
 	_time_snap.text = "时间吸附"
 	_time_snap.tooltip_text = "将放键和拖动对齐到当前参考线"
@@ -921,8 +1037,14 @@ func _build_track_bar() -> void:
 	row.add_child(_time_snap)
 	row.add_child(VSeparator.new())
 	var transport := HBoxContainer.new()
-	transport.add_theme_constant_override("separation", 2)
+	transport.add_theme_constant_override("separation", 4)
 	row.add_child(transport)
+	_time_display = _label("00:00.0", 13)
+	_time_display.custom_minimum_size.x = 59
+	_time_display.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_time_display.tooltip_text = "当前谱面时间（分:秒）"
+	_time_display.mouse_filter = Control.MOUSE_FILTER_PASS
+	transport.add_child(_time_display)
 	_play_button = _button("播放", sidebar._on_rt_play_pause_toggle)
 	transport.add_child(_play_button)
 	transport.add_child(_button("停止", chart.reset_rt_playback))
@@ -973,6 +1095,7 @@ func _build_results() -> void:
 	heading.add_child(_slide_path)
 	_preview_controls = MenuButton.new()
 	_preview_controls.text = "预览控制"
+	_preview_controls.flat = true
 	var commands := _preview_controls.get_popup()
 	commands.theme_type_variation = &"DesktopMenuPopup"
 	commands.add_item("从当前拍试玩", 0)
@@ -1018,7 +1141,6 @@ func _build_results() -> void:
 	_analyze = _button("分析音频", _request_analysis)
 	row.add_child(_analyze)
 	_status = _label("", 12)
-	_status.add_theme_color_override("font_color", MUTED)
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	column.add_child(_status)
 	_plot_title = _label("速度曲线", 12)
@@ -1210,7 +1332,7 @@ func _refresh_empty(_id := -1) -> void:
 	_refresh_tip()
 
 func _build_tips() -> void:
-	_tips_bar = _box("WorkspaceTips", Color("#171d28"))
+	_tips_bar = _box("WorkspaceTips")
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
 	_tips_bar.add_child(row)
@@ -1478,14 +1600,14 @@ func _apply_theme() -> void:
 	_inspector_divider.color = EditorTheme.tone("line")
 	_timeline_divider.color = EditorTheme.tone("line")
 	_copilot_divider.color = EditorTheme.tone("line")
-	_menu.get_theme_stylebox("panel").bg_color = EditorTheme.tone("menu")
-	for heading: Control in [_inspector_heading, _result_heading]:
-		var header_style := heading.get_theme_stylebox("panel") as StyleBoxFlat
-		header_style.bg_color = EditorTheme.tone("heading")
-	for panel: Control in [_track_bar, _rail, _result, _frequency, _emotion_panel, _tips_bar,
-			_empty.get_child(0)]:
-		var style := panel.get_theme_stylebox("panel") as StyleBoxFlat
-		style.bg_color = EditorTheme.surface(panel.get_meta("theme_surface"))
+	for panel: Control in [_menu, _tips_bar]:
+		_tint_panel(panel, "menu")
+	for panel: Control in [_inspector_heading, _result_heading]:
+		_tint_panel(panel, "heading", SIDE_BOTTOM)
+	_tint_panel(_track_bar, "panel", SIDE_BOTTOM)
+	_tint_panel(_rail, "heading")
+	for panel: Control in [_result, _frequency, _emotion_panel, _empty.get_child(0)]:
+		_tint_panel(panel, "surface")
 	_audio_label.add_theme_color_override("font_color", EditorTheme.tone("muted"))
 	_time_display.add_theme_color_override("font_color", EditorTheme.tone("accent"))
 	_status.add_theme_color_override("font_color", EditorTheme.tone("muted"))
@@ -1495,14 +1617,22 @@ func _apply_theme() -> void:
 	copilot.apply_theme()
 	mcp.apply_theme(_ui_theme)
 	_onboarding.apply_theme(_ui_theme)
-	for dialog: Window in [_about, _file, _lyrics_file, _image_file, _chart_file, _ask, _message, _video_settings, _video_progress, _release_dialog]:
+	for dialog: Window in [_about, _prompt_editor, _unlock_dialog, _file, _lyrics_file, _image_file, _chart_file, _ask, _message, _video_settings, _video_progress, _release_dialog]:
 		if dialog:
 			dialog.theme = _ui_theme
 	if _feature_finder:
 		_feature_finder.apply_theme(_ui_theme)
 	_style_scrollbar()
+	apply_layout.call_deferred()
 	for control: Control in [grid, _plot, _melody_plot, _palette]:
 		control.queue_redraw()
+
+func _tint_panel(panel: Control, token: String, edge := -1) -> void:
+	var style := panel.get_theme_stylebox("panel") as StyleBoxFlat
+	style.bg_color = EditorTheme.tone(token)
+	if edge >= 0:
+		style.set_border_width(edge, 1)
+		style.border_color = EditorTheme.tone("rule")
 
 func _retheme_sidebar(node: Node) -> void:
 	if node is Control and node.has_theme_color_override("font_color"):
@@ -1554,7 +1684,7 @@ func _play_at(time: float) -> void:
 
 func _set_loop_range(value: Vector2) -> void:
 	_loop_range = value
-	if _phrase_action: _phrase_action.visible = value.y > value.x
+	if _phrase_action: _phrase_action.visible = features_enabled() and value.y > value.x
 	grid.loop_range_ms = value
 	grid.queue_redraw()
 
@@ -1579,6 +1709,8 @@ func _toggle_loop(enabled: bool) -> void:
 		_play_at(_loop_range.x)
 
 func _audition_analysis() -> void:
+	if not features_enabled():
+		return
 	if _audition:
 		chart.pause_rt_playback()
 		return
@@ -1619,8 +1751,9 @@ func _refresh_tool() -> void:
 		_tools[identifier].set_pressed_no_signal(identifier == tool)
 	if _event_tools:
 		var popup := _event_tools.get_popup()
+		var event_item := tool if tool >= 300 else DEFAULT_EVENT_TOOL_ITEM
 		for index in range(popup.item_count):
-			popup.set_item_checked(index, popup.get_item_id(index) == tool)
+			popup.set_item_checked(index, popup.get_item_id(index) == event_item)
 		_event_tools.text = "事件 · " + popup.get_item_text(popup.get_item_index(tool)) if tool >= 300 else "事件"
 	if tool != 2:
 		preview.cancel_canvas_placement()
@@ -1705,6 +1838,7 @@ func _refresh_plot_pointer() -> void:
 func _on_guide_mode_changed(mode: int) -> void:
 	grid.set_reference_mode(mode)
 	_mode_choice.select(_mode_choice.get_item_index(mode))
+	_snap_division.visible = mode == ReferenceMode.TRADITIONAL
 	_update_capture_panel()
 	_refresh_tip()
 
@@ -2040,7 +2174,7 @@ func import_audio(path: String, ask: bool = true, find_lyrics := true) -> bool:
 	if find_lyrics and preferences.import_matching_lyrics and FileAccess.file_exists(sidecar):
 		import_lyrics(sidecar, false)
 	chart.force_refresh()
-	if ask:
+	if ask and features_enabled():
 		DialogLayout.present(_ask, Vector2i(490, 160))
 	return true
 
@@ -2118,7 +2252,7 @@ func _update_capture_panel() -> void:
 		applied_id, str(_analysis_request.get("capture_id", "")) if _analyzing else "")
 
 func _request_analysis() -> void:
-	if _analyzing or chart.audio_path.is_empty():
+	if not features_enabled() or _analyzing or chart.audio_path.is_empty():
 		return
 	var options := _requested_audio_analysis()
 	var input := _capture_input(options.capture_stem, true)
@@ -2263,15 +2397,24 @@ func _request_spectrum() -> void:
 	_start_analysis({"spectrum_only": true})
 
 func _analyze_for_agent(options: Dictionary) -> Dictionary:
+	if not features_enabled():
+		return {"error": "请联系原作者解锁 Agent 和自动采音。"}
 	options = options.duplicate()
 	_emotion_options(options)
+	if options.get("engine") == "madmom":
+		options["madmom_model_cache"] = preferences.analysis_options.get("madmom_model_cache", "")
 	var generation := _document_generation
-	var path: String = chart.resolve_audio_path(chart.audio_path)
-	var id := _audio_cache.fingerprint(path)
-	if id.is_empty():
+	var stem: String = options.get("capture_stem", "")
+	if not stem.is_empty():
+		_stem_separation.refresh()
+	var input := _capture_input(stem, true)
+	if chart.audio_path.is_empty():
 		return {"error": "当前没有可分析的音频。"}
+	if input.is_empty():
+		return {"error": "无法读取当前工程音频。" if stem.is_empty()
+			else "所选分轨尚不可用。请先在自动采音面板完成分轨，再重试。"}
 	var progress: Callable = options.get("progress", Callable())
-	var result := _audio_cache.lookup(id, options)
+	var result := _audio_cache.lookup(input.id, options)
 	var missing: Array = result.missing
 	result.erase("missing")
 	var service := _analysis_service(str(options.get("engine", "native")))
@@ -2289,11 +2432,11 @@ func _analyze_for_agent(options: Dictionary) -> Dictionary:
 	request["agent_cross_analysis"] = true
 	request["tasks"] = missing
 	request.erase("cache_only")
-	if not _start_analysis(request):
+	if not _start_analysis(request, input):
 		return {"error": "未能启动本地分析。"}
 	var finished: Array = await analysis.completed
-	if generation != _document_generation or id != _audio_cache.fingerprint(path):
-		return {"error": "分析期间音频或工程已切换。"}
+	if generation != _document_generation or finished[0] != input.path or input != _capture_input(stem):
+		return {"error": "分析期间采音源或工程已更换。"}
 	result.merge(finished[1], true)
 	result["inferred_tasks"] = missing
 	return result
@@ -2306,9 +2449,13 @@ func agent_editor_view() -> Dictionary:
 	var rect: Rect2 = grid._grid_viewport_rect()
 	var left: int = chart.time_unit_to_ms(roundi(rect.position.x * 64.0 / grid.column_width))
 	var right: int = chart.time_unit_to_ms(roundi(rect.end.x * 64.0 / grid.column_width))
+	var sources := []
+	if not chart.audio_path.is_empty():
+		sources = CaptureCatalog.SOURCES.duplicate() if _stem_separation.state == "ready" else ["mix"]
 	return {"visible_ruler": [chart.ruler_position(left), chart.ruler_position(right)],
 		"reference_mode": _mode_choice.get_item_text(_mode_choice.selected),
-		"time_snap": chart.timeline_snap_enabled, "inspector": str(_tabs.get_current_tab_control().name)}
+		"time_snap": chart.timeline_snap_enabled, "inspector": str(_tabs.get_current_tab_control().name),
+		"capture_sources": sources}
 
 func _agent_audio_selection() -> Vector2:
 	if _loop_range.y > _loop_range.x:
@@ -2369,6 +2516,9 @@ static func _analysis_targets(tasks: Array) -> String:
 	return "、".join(tasks.map(func(task: String): return captions.get(task, task)))
 
 func _start_analysis(options: Dictionary, capture_input := {}) -> bool:
+	if not features_enabled() and (options.has("capture_id") or options.get("agent_cross_analysis", false)
+			or options.get("tasks", []).any(func(task: String): return task != "emotions")):
+		return false
 	_emotion_options(options)
 	var details := {"engine": options.get("engine", "native"), "tempo_engine": options.get("tempo_engine", "native"),
 		"tasks": options.get("tasks", []), "spectrum": options.get("spectrum_only", false),
@@ -2414,9 +2564,10 @@ func _on_analysis_complete(path: String, result: Dictionary) -> void:
 	if _analysis_generation != _document_generation or chart.audio_path.is_empty():
 		diagnostics.record("analysis.discard", {"reason": "音频或工程已切换"}, "warning")
 		return
-	if request.has("capture_id"):
+	if not capture_input.is_empty():
 		if capture_input != _capture_input(request.get("capture_stem", ""), true):
-			_notify("采音期间所选音源已更换，请重新采音。")
+			if not request.get("agent_cross_analysis", false):
+				_notify("采音期间所选音源已更换，请重新采音。")
 			return
 		_audio_cache.store(capture_input.id, request, result)
 	elif path != chart.resolve_audio_path(chart.audio_path):
@@ -2544,6 +2695,8 @@ func _apply_emotion_result(result: Dictionary) -> void:
 		_show_analysis_feedback("分段情绪分析失败", _emotion_feedback if not _emotion_feedback.is_empty() else "没有检测到有效片段。")
 
 func _apply_curve() -> void:
+	if not features_enabled():
+		return
 	if not chart.apply_rhythm_curve():
 		_notify("请先分析音频，获得速度曲线。")
 

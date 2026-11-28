@@ -59,7 +59,6 @@ func attach(workspace: Node) -> void:
 			_practice_note_placed = true)
 	_workspace.chart.note_updated.connect(_check_practice_move)
 	set_process(false)
-	_maybe_prompt.call_deferred()
 
 func _maybe_prompt() -> void:
 	if not _workspace.background_mode and DisplayServer.get_name() != "headless" and _workspace.preferences.tutorial_experience.is_empty():
@@ -337,9 +336,9 @@ func _button(label: String, callback: Callable) -> Button:
 	return button
 
 func _beginner_steps() -> Array[Dictionary]:
-	return [
+	var steps: Array[Dictionary] = [
 		_step("导入你的第一首歌",
-			"点「导入音频」选一首歌，也可把 MP3、WAV 或 OGG 拖进来。导入后可以先练习采音，也可以直接放键。",
+			"点「导入音频」选一首歌，也可把 MP3、WAV 或 OGG 拖进来。导入后就能开始放键。",
 			_file_menu(), "导入音频", _workspace._open_audio_dialog, "audio", "导入歌曲后可继续。"),
 		_step("认识卷帘和检查器",
 			"下方卷帘从左到右是时间，一行是一条轨道。左上检查器修改音符属性，页签找不到时点「全部页签」。右上是预览。",
@@ -390,9 +389,13 @@ func _beginner_steps() -> Array[Dictionary]:
 			"「文件 → 保存谱面」用于继续编辑。「导出谱面压缩包」会把谱面、歌曲和图片打成可玩的 ZIP。之后可从「帮助 → 功能速查」查入口。",
 			_file_menu(), "导出谱面压缩包", _workspace.sidebar._on_export_zip, "export", "完成一次 ZIP 导出即可结束。"),
 	]
+	if not _workspace.features_enabled():
+		steps = steps.filter(func(step: Dictionary): return step.target != _workspace._analysis_panel and step.title not in [
+			"自动采音线", "连接你的制谱 Agent", "让 Agent 补一段谱"])
+	return steps
 
 func _original_steps() -> Array[Dictionary]:
-	return [
+	var steps: Array[Dictionary] = [
 		_step("打开原有谱面",
 			"「文件 → 打开已有谱面」同时支持原版 ZIP 和 JSON。「导入导出」页还在检查器，左上点「全部页签」即可找到。导入音频键位为 %s。" % _shortcut("import_audio"),
 			_file_menu(), "打开文件菜单", _file_menu().show_popup),
@@ -404,7 +407,7 @@ func _original_steps() -> Array[Dictionary]:
 			"工具移到卷帘上沿。当前方案用%s移动，用%s。单独长按右键可切换工具。" % [_workspace.preferences.move_gesture(), _workspace.preferences.selection_gesture()],
 			_workspace._rail, "切到选择工具", _workspace._choose_tool.bind(-1)),
 		_step("时间轴参考线与吸附",
-			"在「参考线量化」切换「传统参考线」或「自动采音线」。传统参考线沿用工程 BPM、拍内细分与变速节点。自动采音线显示上次应用的采音标记。",
+			"在「参考线量化」设置工程 BPM，再到卷帘上方调整拍内细分和时间吸附。",
 			_workspace._track_bar, "打开参考线量化", _workspace._open_inspector_page.bind("参考线量化")),
 		_step("画面位置与试玩",
 			"在预览区用%s改位置，右上的「位置吸附」独立于时间吸附。「预览控制」里可循环或试玩，试玩后点「返回编辑」。" % _workspace.preferences.move_gesture(),
@@ -416,6 +419,9 @@ func _original_steps() -> Array[Dictionary]:
 			"从「文件」保存或导出 ZIP，渲染视频也在同一菜单。以后可在右下角打开「功能速查」，搜索歌词、动画、吸附或旧功能名称。",
 			_file_menu(), "打开功能速查", _workspace._open_feature_finder),
 	]
+	if not _workspace.features_enabled():
+		steps = steps.filter(func(step: Dictionary): return step.title != "自动采音与缓存")
+	return steps
 
 func _select_capture(id: String) -> void:
 	_workspace._open_inspector_page("自动采音")

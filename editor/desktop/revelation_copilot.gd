@@ -8,6 +8,7 @@ signal approval_resolved(approved: bool)
 const TITLE := "Revelation Co-pilot"
 const HISTORY_BYTES := 12000
 const Agent := preload("res://desktop/chart_agent.gd")
+const Prompts := preload("res://desktop/agent_prompts.gd")
 const Reviewer := preload("res://desktop/copilot_reviewer.gd")
 const Markdown := preload("res://desktop/copilot_markdown.gd")
 const AudioImport := preload("res://desktop/agent_audio_import.gd")
@@ -31,6 +32,8 @@ const FIELD_NAMES := {
 	"fill": "填充", "target": "图像轨道", "fields": "谱面字段", "segments": "速度分段", "start_beat": "起始拍",
 	"total_beats": "总拍数", "text": "文本", "size": "字号", "fade_in_ms": "淡入（毫秒）", "fade_out_ms": "淡出（毫秒）",
 	"name": "谱面名称", "difficulty": "难度", "composer": "作曲者", "description": "说明", "tips": "提示", "bpm": "速度",
+	"capture_id": "采音项目", "engine": "分析引擎", "model": "模型", "tasks": "分析任务", "stem": "采音源",
+	"sensitivity": "灵敏度", "use_for_draft": "替换草稿中已有分析结果",
 }
 const VALUE_NAMES := {"note": "普通键", "drag": "滑键", "hold": "长键", "cover": "曲绘", "color": "纯色",
 	"mask": "蒙版", "background": "底图", "shape": "图形", "square": "正方形", "rectangle": "矩形",
@@ -417,7 +420,11 @@ func _confirm_compose() -> void:
 	if _compose_brief.text.length() > 3000:
 		return
 	var level := _compose_level.get_item_text(_compose_level.selected)
-	var prompt := "请为当前歌曲制作 %s 难度的可玩谱面。默认覆盖全曲；若谱师指定了范围、补谱或其他限制，以其要求为准。先读现有音符、相邻乐句和音频特征，结合重音、起音、响度、频段和旋律安排键型、疏密与走位。这是浮现式音游，键可以出现在屏幕任何位置；按相邻键的手序、长键占手和提前引导安排转移。保留已有编排，分段批量写入，回读检查冲突，再提交实际草稿。" % level
+	var template := Prompts.section("copilot", "one-click")
+	if not template.contains("{{difficulty}}"):
+		_workspace._notify("无法加载一键制谱模板。请检查提示词文件中的难度占位符。")
+		return
+	var prompt := template.replace("{{difficulty}}", level)
 	var brief := _compose_brief.text.strip_edges()
 	if not brief.is_empty():
 		prompt += "\n谱师要求：" + brief
@@ -438,7 +445,7 @@ func prepare_selection(bounds: Vector2) -> void:
 	_editor.select_all()
 
 func _send_prompt(text: String, difficulty := "") -> bool:
-	if busy or text.is_empty():
+	if not _workspace.features_enabled() or busy or text.is_empty():
 		return false
 	if _span_generation != _workspace._document_generation or not difficulty.is_empty():
 		_selected_span = Vector2(-1,-1)
@@ -618,6 +625,7 @@ func _retry_request() -> void:
 func _request_approval(name: String, arguments: Dictionary) -> bool:
 	if not busy or _generation != _workspace._document_generation:
 		return false
+	var profile_write := name in Agent.ProfileTools.WRITES
 	if _selected_span.y > _selected_span.x and name not in ["finish", "add_notes", "move_notes", "delete_notes", "set_positions", "set_note_lead_in", "resize_holds", "set_hold_path"]:
 		return false
 	if _selected_span.y > _selected_span.x and _preserve.button_pressed and name not in ["finish", "add_notes"]:
@@ -627,7 +635,7 @@ func _request_approval(name: String, arguments: Dictionary) -> bool:
 		_step_status.text = "已拒绝"
 		return false
 	var review_note := ""
-	if _auto_approve.button_pressed:
+	if _auto_approve.button_pressed and not profile_write:
 		var turn := _review_turn
 		var proposal := _review_scope.duplicate()
 		proposal["tool"] = name
@@ -665,12 +673,14 @@ func _request_approval(name: String, arguments: Dictionary) -> bool:
 				_refused_operations[operation_key] = true
 				return false
 	_approval_title.text = "等待批准 · " + _workspace.automatic._action_caption(name)
-	if name == "import_audio":
+	if profile_write:
+		_approval_details.text = Agent.ProfileTools.approval_text(name, arguments)
+	elif name == "import_audio":
 		_approval_details.text = "确认后立即导入音频，保留现有音符并清空旧分析。\n" + str(arguments.path)
 	elif name == "finish":
 		_approval_details.text = "将本轮已批准的草稿写入当前谱面。\n" + _describe(arguments)
 	elif name == "analyze_audio":
-		_approval_details.text = "运行本地音频分析并更新分析结果。\n" + _describe(arguments)
+		_approval_details.text = "在本机分析指定音轨，结果供助手制谱使用。\n" + _describe(arguments)
 	else:
 		_approval_details.text = "应用到当前草稿，完成后将一次性写入谱面。\n" + _describe(arguments)
 		if _plan:

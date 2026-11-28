@@ -43,11 +43,14 @@ static func tools() -> Array:
 	var entries := DESCRIPTIONS.duplicate()
 	for name: String in Context.TOOLS:
 		entries[name] = Context.TOOLS[name][2]
-	entries["run_rpy"] += " " + Guidance.RPY
+	for name: String in Agent.ProfileTools.TOOLS:
+		entries[name] = Agent.ProfileTools.TOOLS[name][2]
+	entries["run_rpy"] += " " + Guidance.rpy()
 	var result := []
 	for name: String in entries:
-		var writes: bool = name in Agent.WRITES or name in ["finish", "add_artwork", "run_rpy", "import_audio"]
-		var title: String = Automatic.ACTION_LABELS.get(name, Context.TOOLS.get(name, [MCP_TITLES.get(name, name)])[0])
+		var writes: bool = name in Agent.WRITES or name in Agent.ProfileTools.WRITES or name in ["finish", "add_artwork", "run_rpy", "import_audio"]
+		var info: Array = Context.TOOLS.get(name, Agent.ProfileTools.TOOLS.get(name, [MCP_TITLES.get(name, name)]))
+		var title: String = Automatic.ACTION_LABELS.get(name, info[0])
 		result.append({"name": name, "title": title,
 			"description": entries[name] + (" This changes only the draft until finish is approved." if name in Agent.WRITES else ""),
 			"inputSchema": _schema(name), "annotations": {"readOnlyHint": not writes, "destructiveHint": name in ["delete_notes", "remove_animation_layer", "delete_text_event", "set_tempo_map", "finish"],
@@ -55,6 +58,8 @@ static func tools() -> Array:
 	return result
 
 static func _schema(name: String) -> Dictionary:
+	if name in Agent.ProfileTools.TOOLS:
+		return Agent.ProfileTools.schema(name)
 	match name:
 		"locate_notes":
 			return _object(["seconds", "ruler_beat", "radius_ms", "offset", "limit"])
@@ -118,9 +123,15 @@ static func _schema(name: String) -> Dictionary:
 		"view_audio_figure":
 			return _object(["from_ms", "to_ms"], {"kind": _choice(FIGURES)})
 		"analyze_audio":
-			return _object(RANGE, {"engine": _choice(["native", "essentia", "music2emo", "rmvpe"]),
-				"tasks": _array(_choice(["beats", "downbeats", "tempo", "onsets", "accents", "melody", "emotions", "vocal_pitch"]), 6),
-				"use_for_draft": _type("boolean")}, ["tasks"])
+			var catalog = Context.CaptureCatalog
+			var preset := _choice(catalog.ENTRIES.keys())
+			preset["description"] = ", ".join(catalog.ENTRIES.keys().map(func(id: String): return id + " = " + catalog.ENTRIES[id].label))
+			var schema := _object(RANGE, {"capture_id": preset, "engine": _choice(catalog.AGENT_ENGINES),
+				"model": _choice(catalog.AGENT_MODELS), "stem": _choice(catalog.SOURCES),
+				"sensitivity": {"type": "integer", "minimum": 0, "maximum": 100},
+				"tasks": _array(_choice(Context.Analysis.RESULT_KEYS.keys()), 6), "use_for_draft": _type("boolean")})
+			schema["anyOf"] = [{"required": ["capture_id"]}, {"required": ["tasks"]}]
+			return schema
 		"add_notes":
 			return _notes(["time_ms", "lane", "duration_ms", "lead_ms"] + POSITIONS,
 				["type", "time_ms", "lane", "x", "y"], {"type": _choice(["note", "drag", "hold"])})

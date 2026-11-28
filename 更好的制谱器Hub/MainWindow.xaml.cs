@@ -189,13 +189,13 @@ namespace RevelationHub
             var releases = available.ToList();
             foreach (string v in local)
                 if (releases.All(r => r.version != v)) releases.Add(new Release {version=v});
-            var rows=releases.Where(r=>!onlyInstalled || local.Contains(r.version)).OrderByDescending(r=>Version.Parse(r.version)).ToArray();
+            var rows=Distribution.SortReleases(releases.Where(r=>!onlyInstalled || local.Contains(r.version)));
             var keys=rows.Select(r=>r.version).ToHashSet();
             foreach(string key in displayed.Keys.Where(k=>!keys.Contains(k)).ToArray()) {Cards.Children.Remove(displayed[key].Card);displayed.Remove(key);}
             for(int i=0;i<rows.Length;i++)
             {
                 var r=rows[i];bool present=local.Contains(r.version);
-                var upgrade=present?available.FirstOrDefault(x=>Version.Parse(x.version)>Version.Parse(r.version) && !local.Contains(x.version)):null;
+                var upgrade=present?Distribution.StableUpdate(available,r.version,local):null;
                 bool installed = present && library.Installed(r.version);
                 var view=new CardView(r.notes,r.date,r.size,r.sha256,present,installed,upgrade?.version,installed ? library.CudaFor(r.version) : null);
                 bool exists=displayed.TryGetValue(r.version,out var prior);
@@ -220,7 +220,9 @@ namespace RevelationHub
             var header = new DockPanel();
             var version = Label("v" + r.version, 20, "Ink");
             version.FontWeight = FontWeights.SemiBold;
-            var state = Label(damaged ? "需要修复" : installed ? "已安装" : "可安装", 13, damaged?"Warning":installed ? "Success" : "Muted");
+            string status = damaged ? "需要修复" : installed ? "已安装" : "可安装";
+            if (EditorVersion.IsBeta(r.version)) status = "Beta 测试 · " + status;
+            var state = Label(status, 13, damaged?"Warning":installed ? "Success" : "Muted");
             DockPanel.SetDock(state, Dock.Right); header.Children.Add(state); header.Children.Add(version);
             panel.Children.Add(header);
             var detail = Label($"Windows  x64   ·   {r.date}" + (r.size > 0 ? $"   ·   {r.size / 1048576.0:F1} MiB" : ""), 12, "Muted");
@@ -249,7 +251,7 @@ namespace RevelationHub
                 }
             }
             card.Tag = (Action)UpdateActions;
-            card.Name = "V" + r.version.Replace('.','_');
+            card.Name = "V" + r.version.Replace('.','_').Replace('-','_');
             UpdateActions();
             return card;
         }

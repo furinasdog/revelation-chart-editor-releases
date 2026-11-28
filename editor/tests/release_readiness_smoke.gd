@@ -27,7 +27,8 @@ func _run() -> void:
 	var theme_index: int = desktop.preferences.THEME_NAMES.keys().find("gray")
 	wizard._theme.select(theme_index)
 	wizard._theme.item_selected.emit(theme_index)
-	if not _require(ThemePalette.gray and not ThemePalette.light and ThemePalette.tone("panel") == Color("#2d2d2d"),
+	if not _require(ThemePalette.gray and not ThemePalette.light and
+			desktop.sidebar.get_node("PanelBg").color == ThemePalette.tone("panel"),
 			"Studio gray should apply from first-run settings"):
 		return
 	wizard._experience = "branch"
@@ -72,9 +73,14 @@ func _run() -> void:
 	var current: String = desktop._current_release_tag()
 	desktop.preferences.last_run_tag = "v0.3"
 	await desktop._check_release_notice()
-	if not _require(desktop._release_dialog.visible and desktop._release_dialog.dialog_text.contains(current)
-			and desktop.preferences.last_run_tag == current and not Notes.should_show(current, current, true)
-			and not Notes.should_show("v0.4.0", "v0.4.1", true), "An upgrade shows the current notes exactly once"):
+	if not _require(not is_instance_valid(desktop._release_dialog) and desktop.preferences.last_run_tag == current
+			and not Notes.should_show(current, "v1.4.3", true)
+			and Notes.should_show("v1.4.3", "v1.4.2", true)
+			and not Notes.should_show("v0.4.0", "v0.4.1", true), "Beta launch records its version without opening an update prompt"):
+		return
+	desktop._open_release_notes()
+	if not _require(desktop._release_dialog.visible and desktop._release_dialog.dialog_text.contains(current),
+			"Beta notes remain available from the Help menu"):
 		return
 	desktop._release_dialog.hide()
 	await desktop._check_release_notice()

@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory)][string]$Archive,
-    [Parameter(Mandatory)][version]$Version,
+    [Parameter(Mandatory)][ValidateScript({$_ -cmatch '\A[0-9]{1,5}\.[0-9]{1,5}\.[0-9]{1,5}(-beta\.[1-9][0-9]{0,4})?\z'})][string]$Version,
     [Parameter(Mandatory)][string]$KeyFile,
     [Parameter(Mandatory)][string]$Notes,
     [ValidateSet('editor','hub','cuda')][string]$Product='editor',
@@ -11,7 +11,14 @@ Add-Type -AssemblyName System.Security
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 $publicPath = Join-Path $PSScriptRoot 'publisher.xml'
 $isHub = $Product -eq 'hub'
-$catalogPath = Join-Path $PSScriptRoot $(if ($isHub) { 'hub-update.signed.json' } else { 'catalog.signed.json' })
+$isBeta = $Version.Contains('-beta.')
+if ($isHub -and $isBeta) { throw 'Hub self-update only accepts stable versions.' }
+$catalogProduct = if ($Product -eq 'editor' -and $isBeta) { 'editor-beta' } else { $Product }
+$catalogPath = Join-Path $PSScriptRoot $(switch ($catalogProduct) {
+    'hub' { 'hub-update.signed.json' }
+    'editor-beta' { 'beta-catalog.signed.json' }
+    default { 'catalog.signed.json' }
+})
 $source = Get-Item -LiteralPath $Archive
 $expected = if ($isHub) { "Revelation-Hub-v$Version-x64.msi" } else { "Revelation-Editor-v$Version-Windows-x64.zip" }
 if ($Product -eq 'cuda') {
@@ -41,10 +48,10 @@ try {
         $old = [IO.File]::ReadAllText($catalogPath) | ConvertFrom-Json
         $bytes = [Convert]::FromBase64String($old.payload)
         if (!$crypto.VerifyData($bytes,'SHA256',[Convert]::FromBase64String($old.signature))) { throw 'Invalid existing catalog' }
-        $records = @(($utf8.GetString($bytes) | ConvertFrom-Json).releases | Where-Object { $_.version -ne $Version.ToString() })
+        $records = @(($utf8.GetString($bytes) | ConvertFrom-Json).releases | Where-Object { $_.version -ne $Version })
     }
-    $record = [ordered]@{version=$Version.ToString(); size=$source.Length; sha256=(Get-FileHash -LiteralPath $source.FullName).Hash.ToLowerInvariant(); notes=$Notes; date=[DateTime]::UtcNow.ToString('yyyy-MM-dd')}
-    $payload = $utf8.GetBytes((ConvertTo-Json -InputObject @{schema=1;product=$Product;releases=@($record)+$records} -Depth 5 -Compress))
+    $record = [ordered]@{version=$Version; size=$source.Length; sha256=(Get-FileHash -LiteralPath $source.FullName).Hash.ToLowerInvariant(); notes=$Notes; date=[DateTime]::UtcNow.ToString('yyyy-MM-dd')}
+    $payload = $utf8.GetBytes((ConvertTo-Json -InputObject @{schema=1;product=$catalogProduct;releases=@($record)+$records} -Depth 5 -Compress))
     $sig = $crypto.SignData($payload,'SHA256')
     [IO.File]::WriteAllText($publicPath,$public,$utf8)
     [IO.File]::WriteAllText($catalogPath,(ConvertTo-Json -InputObject @{payload=[Convert]::ToBase64String($payload); signature=[Convert]::ToBase64String($sig)} -Compress),$utf8)

@@ -1,12 +1,15 @@
 param(
     [Parameter(Mandatory)][string]$Archive,
-    [Parameter(Mandatory)][version]$Version,
+    [Parameter(Mandatory)][ValidateScript({$_ -cmatch '\A[0-9]{1,5}\.[0-9]{1,5}\.[0-9]{1,5}(-beta\.[1-9][0-9]{0,4})?\z'})][string]$Version,
     [Parameter(Mandatory)][string]$KeyFile,
     [Parameter(Mandatory)][string]$OutputDirectory,
-    [version]$FromVersion,
+    [ValidatePattern('\A[0-9]{1,5}\.[0-9]{1,5}\.[0-9]{1,5}\z')][string]$FromVersion,
     [string]$PatchTag
 )
 $ErrorActionPreference = 'Stop'
+if (($FromVersion -or $PatchTag) -and $Version.Contains('-beta.')) {
+    throw 'Beta releases only support full packages.'
+}
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $out = (New-Item -ItemType Directory -Force $OutputDirectory).FullName
 $manifests = (New-Item -ItemType Directory -Force (Join-Path $PSScriptRoot 'manifests')).FullName
@@ -24,7 +27,7 @@ try {
         $bytes = [Convert]::FromBase64String($envelope.payload)
         if (!$crypto.VerifyData($bytes,[Convert]::FromBase64String($envelope.signature),'SHA256',[Security.Cryptography.RSASignaturePadding]::Pkcs1)) {throw 'Invalid base manifest'}
         $previous = [Text.Encoding]::UTF8.GetString($bytes) | ConvertFrom-Json
-        if ($previous.version -ne $FromVersion.ToString() -or $previous.product -ne 'editor-files') {throw 'Unexpected base manifest'}
+        if ($previous.version -ne $FromVersion -or $previous.product -ne 'editor-files') {throw 'Unexpected base manifest'}
         foreach ($f in $previous.files) { $old[$f.path]=$f.sha256 }
         $name="Revelation-Editor-v$FromVersion-to-v$Version.zip"
         $patchPath=Join-Path $out $name
@@ -46,9 +49,9 @@ try {
         })
     } finally {$zip.Dispose();if ($delta) {$delta.Dispose()}}
     if ($FromVersion) {
-        $patches=@(@{from=$FromVersion.ToString();tag=$PatchTag;size=(Get-Item $patchPath).Length;sha256=(Get-FileHash $patchPath).Hash.ToLowerInvariant()})
+        $patches=@(@{from=$FromVersion;tag=$PatchTag;size=(Get-Item $patchPath).Length;sha256=(Get-FileHash $patchPath).Hash.ToLowerInvariant()})
     }
-    $index=@{schema=1;product='editor-files';version=$Version.ToString();archive=(Get-FileHash $package).Hash.ToLowerInvariant();files=$files;patches=$patches}
+    $index=@{schema=1;product='editor-files';version=$Version;archive=(Get-FileHash $package).Hash.ToLowerInvariant();files=$files;patches=$patches}
     $payload=[Text.Encoding]::UTF8.GetBytes(($index | ConvertTo-Json -Compress -Depth 7))
     $signature=$crypto.SignData($payload,'SHA256',[Security.Cryptography.RSASignaturePadding]::Pkcs1)
     $json=@{payload=[Convert]::ToBase64String($payload);signature=[Convert]::ToBase64String($signature)} | ConvertTo-Json -Compress

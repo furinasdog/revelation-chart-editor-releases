@@ -1,6 +1,11 @@
 extends RefCounted
 
 const DEFAULT_SENSITIVITY := 100
+const Analysis := preload("res://desktop/analysis.gd")
+const StemCache := preload("res://desktop/stem_cache.gd")
+const SOURCES := ["mix"] + StemCache.STEMS
+const AGENT_ENGINES := ["native", "madmom", "essentia", "music2emo", "rmvpe"]
+const AGENT_MODELS := ["default", "multifeature", "degara", "recurrent"]
 
 # Display order, result, engine and model for the capture panel.
 const ENTRIES := {
@@ -28,6 +33,68 @@ static func options(id: String, sensitivity := DEFAULT_SENSITIVITY) -> Dictionar
 	var entry: Dictionary = ENTRIES[id]
 	return {"capture_id": id, "engine": entry.engine, "model": entry.model, "tempo_engine": entry.engine,
 		"tasks": [entry.task], "sensitivity": clampi(sensitivity, 0, 100)}
+
+static func agent_tasks(engine: String) -> Array:
+	match engine:
+		"music2emo": return ["emotions"]
+		"rmvpe": return ["vocal_pitch"]
+	return Analysis.CAPTURE_TASKS[engine] + ["tempo"] if engine in Analysis.ENGINES else []
+
+static func agent_options(arguments: Dictionary) -> Dictionary:
+	var stem: Variant = arguments.get("stem", "mix")
+	if stem not in SOURCES:
+		return {"error": "采音源须为 mix、vocals、drums、bass 或 other。"}
+	var sensitivity: Variant = arguments.get("sensitivity", DEFAULT_SENSITIVITY)
+	if not (sensitivity is int or sensitivity is float) or not is_finite(sensitivity) or sensitivity != floorf(sensitivity) or sensitivity < 0 or sensitivity > 100:
+		return {"error": "采音灵敏度须为 0–100 的整数。"}
+	var preset: Variant = arguments.get("capture_id", "")
+	if not preset is String or (arguments.has("capture_id") and not ENTRIES.has(preset)):
+		return {"error": "未知采音项目。请使用 capture_id 指定自动采音列表中的项目。"}
+	var entry: Dictionary = ENTRIES.get(preset, {})
+	var engine: Variant = arguments.get("engine", entry.get("engine", "native"))
+	if engine not in AGENT_ENGINES:
+		return {"error": "请选择 native、madmom、essentia、music2emo 或 rmvpe。"}
+	var model: Variant = arguments.get("model", entry.get("model", "default"))
+	if not model is String:
+		return {"error": "model 须为模型名称。"}
+	model = model.to_lower()
+	if model == "default" and engine == "essentia":
+		model = "multifeature"
+	var tasks: Variant = arguments.get("tasks", [] if entry.is_empty() else [entry.task])
+	if not tasks is Array or tasks.is_empty() or tasks.size() > 6:
+		return {"error": "请提供 1–6 项分析任务，或直接指定 capture_id。"}
+	var allowed := agent_tasks(engine)
+	var selected: Array = []
+	for task: Variant in tasks:
+		if task not in allowed:
+			return {"error": "该引擎不支持所选任务。", "available": allowed}
+		if task not in selected:
+			selected.append(task)
+	if not _supports_model(engine, model, selected):
+		return {"error": "该引擎或任务不支持所选模型。"}
+	if not entry.is_empty() and (engine != entry.engine or model != entry.model or selected != [entry.task]):
+		return {"error": "capture_id 与指定的引擎、模型或任务不一致。"}
+	if arguments.has("sensitivity") and entry.is_empty():
+		for id: String in ENTRIES:
+			var candidate: Dictionary = ENTRIES[id]
+			if selected == [candidate.task] and engine == candidate.engine and model == candidate.model:
+				preset = id
+				break
+		if preset.is_empty():
+			return {"error": "灵敏度适用于单个自动采音项目。"}
+	var request := {"engine": engine, "tempo_engine": engine, "model": model, "tasks": selected}
+	if not preset.is_empty():
+		request = options(preset, int(sensitivity))
+	request["capture_stem"] = "" if stem == "mix" else stem
+	return request
+
+static func _supports_model(engine: String, model: String, tasks: Array) -> bool:
+	match engine:
+		"essentia":
+			return model == "multifeature" or (model == "degara" and ("beats" in tasks or "tempo" in tasks))
+		"madmom":
+			return model == "default" or (model == "recurrent" and ("onsets" in tasks or "accents" in tasks))
+	return model == "default"
 
 static func detected_bpm(task: String, result: Dictionary) -> float:
 	if task == "tempo":
@@ -63,7 +130,7 @@ static func detected_bpm(task: String, result: Dictionary) -> float:
 static func applied_result(options: Dictionary, result: Dictionary, previous: Dictionary,
 		waveform: PackedFloat32Array, bucket_ms: float) -> Dictionary:
 	var task: String = options.tasks[0]
-	var series: String = preload("res://desktop/analysis.gd").RESULT_KEYS[task]
+	var series: String = Analysis.RESULT_KEYS[task]
 	var merged := previous.duplicate()
 	merged[series] = result[series]
 	for key: String in ["engine", "tempo_engine", "duration_ms"]:
@@ -77,28 +144,32 @@ static func applied_result(options: Dictionary, result: Dictionary, previous: Di
 	merged["capture_sensitivity"] = options.sensitivity
 	merged["capture_stem"] = options.get("capture_stem", "")
 	merged["mapping"] = task
-	merged["capture_markers"] = _markers(task, result, options.sensitivity, waveform, bucket_ms)
+	var filtered := filtered_series(options, result, waveform, bucket_ms)
+	merged["capture_markers"] = [] if task == "tempo" else (
+		filtered.map(func(point: Dictionary): return point.time_ms) if task == "melody" else filtered)
 	if task == "accents":
 		merged.accents = merged.capture_markers
 		merged.accent_sensitivity = options.sensitivity
 		merged["accent_filter"] = result.get("accent_filter", {})
 	return merged
 
-static func _markers(task: String, result: Dictionary, sensitivity: int, waveform: PackedFloat32Array, bucket_ms: float) -> Array:
+static func filtered_series(options: Dictionary, result: Dictionary, waveform: PackedFloat32Array, bucket_ms: float) -> Array:
+	var task: String = options.tasks[0]
+	var sensitivity: int = options.sensitivity
 	var threshold := 1.0 - clampi(sensitivity, 0, 100) / 100.0
 	match task:
 		"tempo":
-			return []
+			return Array(result.get("tempo_curve", []))
 		"melody":
 			var pitched := []
 			for point: Dictionary in result.get("melody", []):
 				if float(point.get("hz", 0)) > 0 and float(point.get("confidence", 0)) >= threshold:
-					pitched.append(point.time_ms)
+					pitched.append(point)
 			return pitched
 		"accents":
 			var filter: Dictionary = result.get("accent_filter", {})
 			if filter.has("points"):
-				return preload("res://desktop/analysis.gd").filter_accents(filter.points, sensitivity)
+				return Analysis.filter_accents(filter.points, sensitivity)
 	# Beat and onset backends return timestamps without individual confidences.
 	# Use the measured level around each detection to suppress quiet events.
 	var times: Array = Array(result.get(task, []))
@@ -112,11 +183,11 @@ static func _markers(task: String, result: Dictionary, sensitivity: int, wavefor
 			if float(stem_levels[i]) >= cutoff:
 				markers.append(times[i])
 		return markers
-	if waveform.is_empty():
+	if waveform.is_empty() or not options.get("capture_stem", "").is_empty():
 		return times
 	var levels := PackedFloat32Array()
 	var peak := 0.0
-	var radius := maxi(1, ceili(35.0 / bucket_ms))
+	var radius := maxi(1, ceili(35.0 / maxf(bucket_ms, 0.01)))
 	for time: float in times:
 		var bucket := floori(time / bucket_ms)
 		var level := 0.0

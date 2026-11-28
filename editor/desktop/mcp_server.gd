@@ -279,7 +279,7 @@ func _initialize(connection: Dictionary, message: Dictionary) -> void:
 	_sessions[session_id] = {"version": version, "client": client, "last_seen": Time.get_ticks_msec()}
 	_result(connection, id, {"protocolVersion": version, "capabilities": {"tools": {}, "prompts": {}},
 		"serverInfo": {"name": "revelation-chart-editor", "version": str(ProjectSettings.get_setting("application/config/version"))},
-		"instructions": Guidance.QUICK},
+		"instructions": Guidance.quick()},
 		"Mcp-Session-Id: " + session_id + "\r\n")
 
 func _reclaim_idle_session() -> bool:

@@ -30,8 +30,8 @@ func _run() -> void:
 	chart.reset_loaded_chart()
 	desktop._open_inspector_page("参考线量化")
 	sidebar._guide_mode_buttons[ReferenceMode.BEATS].pressed.emit()
-	_check(not sidebar._manual_bpm_controls.is_visible_in_tree(),
-		"Automatic capture guides do not show manual BPM input")
+	_check(not sidebar._manual_bpm_controls.is_visible_in_tree() and not desktop._snap_division.is_visible_in_tree(),
+		"Automatic capture guides hide traditional BPM and subdivision controls")
 	sidebar._guide_mode_buttons[ReferenceMode.TRADITIONAL].pressed.emit()
 	var input: LineEdit = sidebar._manual_bpm_input
 	var apply: Button = sidebar._manual_bpm_apply
@@ -96,5 +96,31 @@ func _run() -> void:
 		"Manual BPM input and Apply fit the narrow 125% inspector")
 	chart.reset_loaded_chart()
 	_check(input.text.is_empty() and apply.disabled, "Resetting to a new empty chart clears the manual BPM field")
+	_check_fine_snap(desktop)
 	print("MANUAL_BPM_SMOKE failures=", failures)
 	quit(0 if failures == 0 else 1)
+
+func _check_fine_snap(desktop: Node) -> void:
+	var chart: Node = desktop.chart
+	var grid: Control = desktop.grid
+	var division: OptionButton = desktop._snap_division
+	chart.set_bpm(120.0)
+	_check(division.text == "1/8" and grid.time_at_playhead(65) == chart.time_unit_to_ms(8),
+		"New charts snap on the eighth-beat grid")
+	_check(grid._reference_grid_stride(48.0, 8) == 1 and grid._reference_grid_stride(24.0, 8) == 2
+		and grid._reference_grid_stride(3.0, 8) == 32, "Zoomed-out rulers show aligned intermediate divisions")
+	var fine_index: int = chart.snap_divisions.find(16)
+	division.select(fine_index)
+	division.item_selected.emit(fine_index)
+	_check(desktop.sidebar.snap_select.selected == fine_index and grid.time_at_playhead(30) == chart.time_unit_to_ms(4),
+		"The toolbar changes actual snap timing and updates the inspector")
+	chart.set_export_metadata({"snapIndex": 3}, {})
+	chart.force_refresh_requested.emit()
+	_check(division.text == "1/4", "Opening an older chart retains its saved subdivision")
+	chart.set_rhythm_analysis({"beats": [117.0, 619.0]})
+	desktop.sidebar.set_guide_mode(ReferenceMode.BEATS)
+	_check(grid.time_at_playhead(120) == 117, "Captured markers retain exact timestamps")
+	chart.preview_grid_enabled = true
+	_check(chart.preview_grid_div_x == 16 and chart.preview_grid_div_y == 12
+		and desktop.preview._snap_game_pos_to_grid(125, 91) == Vector2(120, 90),
+		"Preview position snapping uses the finer default grid")

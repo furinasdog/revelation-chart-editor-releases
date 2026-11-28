@@ -81,6 +81,18 @@ internal partial class Program
     }
     static async Task Main(string[] args)
     {
+        if (args is ["--feature-access", var locked, var unlocked])
+        {
+            Check(!EditorFeatureAccess.Enabled(locked) && EditorFeatureAccess.Enabled(unlocked),
+                "Hub honors the editor's machine-bound signed feature receipt");
+            return;
+        }
+        if (args is ["--startup-agreements"]) { await CheckStartupAgreements(); return; }
+        if (args is ["--beta", var betaCatalog, var betaManifest, var betaArchive])
+        {
+            await CheckBeta(betaCatalog, betaManifest, betaArchive);
+            return;
+        }
         if (args is ["--downloads"]) { await CheckDownloads(); return; }
         if (args is ["--models", var madmom, var emotion, var stems]) { await CheckModels(madmom,emotion,stems); return; }
         if (args is ["--online-model", var model, var profileRoot]) { await CheckOnlineModel(model,profileRoot); return; }
